@@ -1,0 +1,16 @@
+version: '3.2'
+services: 
+    node1:
+        build: .
+        volumes:
+            - type: bind
+              source: .
+              target: /opt/go-is-is
+        image: is-is-node
+    node2:
+        build: .
+        volumes:
+            - type: bind
+              source: .
+              target: /opt/go-is-is
+        image: is-is-node 
