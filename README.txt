@@ -4,14 +4,19 @@ Project goal
     in there
 - Each container represents an IS-IS node
 - Send configuration in via gRPC
+    - First piece of config that is required is SID and interfaces
+    - Should I use a proto file to define the actual messages between routers ? Would that no longer be to spec?
 - Docker-compose to bring up the topology
 - Docker containers are connected initially via the docker bridge so all containers are reachable  i.e. one big LAN by default
 - How to set up p2p links ? Use a user-defined docker network?
 - Step 1: Adjacency and hello LSPs
     - Requires at least two goroutines one for sending hellos and one for receiving
-    - 3 way handshake for IIH: R1 sends a broadcast mac IIH frame and marks the adjacency as NEW, R2 receives this and slaps the senders mac in TLV IS-Neighbor and sends it back, then R1 receives this IIH with his own mac in it and sends back a third IIH with the senders mac (R2) in the TLV, then marks the adjacency as UP.
+    - 3 way handshake for IIH: R1 sends a broadcast mac IIH frame and marks the adjacency as NEW, 
+                               R2 receives this and slaps the senders mac in TLV IS-Neighbor and sends it back, then 
+                               R1 receives this IIH with his own mac in it and sends back a third IIH with the senders mac (R2) in the TLV, 
+                               then marks the adjacency as UP.
 
-- Docker-machine settings needed for this work:
+- Docker-machine settings needed for this to work:
 
 echo 0 > /proc/sys/net/bridge/bridge-nf-call-iptables
 echo 0 > /sys/devices/virtual/net/br-c289e1f46025/bridge/multicast_snooping

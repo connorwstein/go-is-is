@@ -2,12 +2,11 @@
 package main
 
 import (
-    "fmt"
+    //"fmt"
     "bytes"
     "encoding/binary"
-    "encoding/hex"
+    //"encoding/hex"
 )
-
 
 const (
     INTRA_DOMAIN_ROUTEING_PROTOCOL_DISCRIMINATOR = 0x83
@@ -86,8 +85,7 @@ func build_eth_frame(dst []byte, src []byte, ether_type []byte, payload []byte) 
     binary.Write(&buf, binary.BigEndian, src)
     binary.Write(&buf, binary.BigEndian, ether_type)
     binary.Write(&buf, binary.BigEndian, payload)
-    //binary.Write(&buf, binary.BigEndian, hello_pdu.header)
-    fmt.Println(hex.Dump(buf.Bytes()))
+    //fmt.Println(hex.Dump(buf.Bytes()))
     return buf.Bytes()
 }
 
@@ -99,6 +97,11 @@ func serialize_isis_hello_pdu(pdu *IsisLANHelloPDU) []byte {
     // common header can by serialized as is
     binary.Write(&buf, binary.BigEndian, pdu.header)
     binary.Write(&buf, binary.BigEndian, pdu.circuit_type)
-    binary.Write(&buf, binary.BigEndian, pdu.circuit_type)
+    binary.Write(&buf, binary.BigEndian, pdu.source_system_id)
+    binary.Write(&buf, binary.BigEndian, pdu.holding_time)
+    binary.Write(&buf, binary.BigEndian, pdu.pdu_length)
+    binary.Write(&buf, binary.BigEndian, pdu.priority)
+    binary.Write(&buf, binary.BigEndian, pdu.lan_dis)
     return buf.Bytes()
 }
+

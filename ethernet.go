@@ -12,6 +12,7 @@ import (
 const (
 	PF_PACKET = 17
     ETH_P_ALL = 0x0003
+    READ_BUF_SIZE = 100
 )
 
 type PFConn struct {
@@ -20,6 +21,7 @@ type PFConn struct {
 }
 
 func htons(host uint16) uint16 {
+    // TODO: is this needed?
     return (host&0xff)<<8 | (host >> 8)
 }
 
@@ -77,7 +79,12 @@ func (c *PFConn) Read(b []byte) (int, *syscall.RawSockaddrLinklayer, error) {
     return int(r1), &sll, nil
 }
 
-func (c *PFConn) Write(b []byte, dst [8]uint8) (n int, err error) {
+func (c *PFConn) Write(b []byte) (n int, err error) {
+    // Write a raw ethernet frame to interface in PFConn
+    var dst [8]uint8
+    for i := 0; i < len(dst); i++ {
+        dst[i] = uint8(b[i]) 
+    } 
     sll := syscall.RawSockaddrLinklayer{
         Ifindex: int32(c.intf.Index),
         Addr: dst,
@@ -92,60 +99,51 @@ func (c *PFConn) Write(b []byte, dst [8]uint8) (n int, err error) {
     return int(r1), e
 }
 
-func send_frame(dst []byte, ifname string) {
-    pf, e := NewPFConn(ifname)
-    if pf == nil {
-        fmt.Printf("Failed to open pf socket", e)
-    }
-    if e != nil {
-        fmt.Println(e)
-    }
+func get_mac(ifname string) []byte {
     intf, _ := net.InterfaceByName(ifname)
-    ether_type := []byte{0x08, 0x00}
     src := make([]byte, len(intf.HardwareAddr))
-    for j:=0; j<len(intf.HardwareAddr); j++ {
-        src[j] = intf.HardwareAddr[j]
-    }
-    hello_l1_lan := build_l1_iih_pdu([6]byte{0x11, 0x11, 0x11, 0x11, 0x11, 0x11})
-    var frame []byte = build_eth_frame(dst, src, ether_type, serialize_isis_hello_pdu(hello_l1_lan))
-    var socket_dst [8]uint8
-    for i := 0; i < len(dst); i++ {
-        socket_dst[i] = uint8(dst[i]) 
-    } 
-    // For the socket
-    num_bytes, e := pf.Write(frame, socket_dst)
-    if num_bytes <= 0 {
-        fmt.Printf(e.Error())
-    } else {
-        fmt.Println("Wrote", num_bytes, "bytes")
-    }
+    copy(src, intf.HardwareAddr)
+    return src
 }
 
-func recv_frame(ifname string) {
+func send_frame(dst []byte, ifname string) {
+    // TODO: Separate this function into some kind of init so we don't open 
+    // a new PFConn every time
+    pf, e := NewPFConn(ifname)
+    if pf == nil || e != nil {
+        fmt.Println("Failed to open packet socket", e)
+    }
+    ether_type := []byte{0x08, 0x00}
+    hello_l1_lan := build_l1_iih_pdu([6]byte{0x11, 0x11, 0x11, 0x11, 0x11, 0x11})
+    var frame []byte = build_eth_frame(dst, get_mac(ifname), 
+                                       ether_type, 
+                                       serialize_isis_hello_pdu(hello_l1_lan))
+    num_bytes, e := pf.Write(frame)
+    if num_bytes <= 0 {
+        fmt.Printf(e.Error())
+    } 
+}
+
+func recv_frame(ifname string) [READ_BUF_SIZE]byte {
+    // TODO: fix this hardcoded buffer size
 	pf, err := NewPFConnRecv(ifname)
-	if pf == nil {
+	if pf == nil || err != nil {
 		fmt.Printf("Failed to open pf socket for receiving", err)
 	}
-	if err != nil {
-		fmt.Println(err)
-	}
-    intf, _ := net.InterfaceByName(ifname)
-    src := make([]byte, len(intf.HardwareAddr))
-    for j:=0; j<len(intf.HardwareAddr); j++ {
-        src[j] = intf.HardwareAddr[j]
-    }
-    var b [30]byte
-    fmt.Println("Waiting for packet")
-    // Blocks until something is available with destination l2_lan_hello_dst
-    _, _, e := pf.Read(b[:])
-    // Look for packets that are not our own
-    if ! bytes.Equal(b[6:12], src) {
-        fmt.Printf("Got real packet from: ")
-        fmt.Printf("%X:%X:%X:%X:%X:%X\n", b[6], b[7], b[8], b[9], b[10], b[11])
-        fmt.Println(string(b[14:]))
-        // Respond to this hello packet with a IS-Neighbor TLV 
-    }
-    if e != nil {
-        fmt.Println("Error reading bytes: ", e)
+    src := get_mac(ifname)
+    var b [READ_BUF_SIZE]byte
+    fmt.Println("Reading from socket...")
+    // Only return once a packet has been received which is not ours
+    for {
+        // Blocks until something is available 
+        _, _, e := pf.Read(b[:])
+        if e != nil {
+            fmt.Println("Error reading bytes: ", e)
+        } else {
+            // Return anything that we did not send ourselves 
+            if ! bytes.Equal(b[6:12], src) {
+                return b
+            }
+        }
     }
 }
