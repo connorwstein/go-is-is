@@ -2,10 +2,10 @@
 package main
 
 import (
-    //"fmt"
+    "fmt"
     "bytes"
     "encoding/binary"
-    //"encoding/hex"
+    "encoding/hex"
 )
 
 const (
@@ -75,19 +75,6 @@ func build_l1_iih_pdu(src_system_id [6]byte) *IsisLANHelloPDU {
     return &isis_l1_lan_hello // Golangs pointer analysis will allocate this on the heap
 }
 
-func build_eth_frame(dst []byte, src []byte, ether_type []byte, payload []byte) []byte {
-    // Need a way to put a generic payload in an ethernet frame
-    // output needs to be a large byte slice which can be directly sent with Write
-    // Ethernet frame needs dst, src, type, payload
-    var buf bytes.Buffer
-    // Can't write binary with nil pointer how to handle the TLVs?
-    binary.Write(&buf, binary.BigEndian, dst)
-    binary.Write(&buf, binary.BigEndian, src)
-    binary.Write(&buf, binary.BigEndian, ether_type)
-    binary.Write(&buf, binary.BigEndian, payload)
-    //fmt.Println(hex.Dump(buf.Bytes()))
-    return buf.Bytes()
-}
 
 func serialize_isis_hello_pdu(pdu *IsisLANHelloPDU) []byte {
     // Used as the payload of an ethernet frame
@@ -103,5 +90,19 @@ func serialize_isis_hello_pdu(pdu *IsisLANHelloPDU) []byte {
     binary.Write(&buf, binary.BigEndian, pdu.priority)
     binary.Write(&buf, binary.BigEndian, pdu.lan_dis)
     return buf.Bytes()
+}
+
+func send_hello() {
+    hello_l1_lan := build_l1_iih_pdu([6]byte{0x11, 0x11, 0x11, 0x11, 0x11, 0x11})
+    fmt.Println(l1_lan_hello_dst)
+    send_frame(build_eth_frame(l1_lan_hello_dst, get_mac("eth0"), serialize_isis_hello_pdu(hello_l1_lan)), "eth0")
+}
+
+func recv_hello() {
+    // Blocks until a hello is available
+    hello := recv_frame("eth0")
+    fmt.Printf("Got hello from %X:%X:%X:%X:%X:%X\n", 
+               hello[6], hello[7], hello[8], hello[9], hello[10], hello[11])
+    fmt.Println(hex.Dump(hello[:]))
 }
 

@@ -16,4 +16,5 @@ RUN ln -s /usr/local/bin/protoc /usr/bin/protoc
 WORKDIR /opt/go-is-is
 RUN /usr/local/go/bin/go get -u google.golang.org/grpc 
 RUN /usr/local/go/bin/go get -u github.com/golang/protobuf/protoc-gen-go
+ENV PATH="/usr/local/go/bin:/root/go/bin:${PATH}"
 CMD tail -f /dev/null

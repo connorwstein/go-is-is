@@ -1,4 +1,6 @@
 // Functions to send and receive ethernet frames
+// Should be agnostic to the type of data being sent
+// Lowest layer
 package main
 
 import (
@@ -7,6 +9,8 @@ import (
     "net"
     "syscall"
 	"unsafe"
+    "encoding/binary"
+    "encoding/hex"
 )
 
 const (
@@ -15,17 +19,16 @@ const (
     READ_BUF_SIZE = 100
 )
 
-type PFConn struct {
+type RawSock struct {
     fd   int
     intf *net.Interface
 }
 
 func htons(host uint16) uint16 {
-    // TODO: is this needed?
-    return (host&0xff)<<8 | (host >> 8)
+    return (host & 0xff) << 8 | (host >> 8)
 }
 
-func NewPFConn(ifname string) (*PFConn, error) {
+func NewRawSock(ifname string) (*RawSock, error) {
     intf, err := net.InterfaceByName(ifname)
     if err != nil {
         return nil, err
@@ -34,13 +37,13 @@ func NewPFConn(ifname string) (*PFConn, error) {
     if err != nil {
         return nil, err
     }
-    return &PFConn{
+    return &RawSock{
         fd:   fd,
         intf: intf,
     }, nil
 }
 
-func NewPFConnRecv(ifname string) (*PFConn, error) {
+func NewRawSockRecv(ifname string) (*RawSock, error) {
     intf, err := net.InterfaceByName(ifname)
     if err != nil {
         return nil, err
@@ -55,32 +58,37 @@ func NewPFConnRecv(ifname string) (*PFConn, error) {
         Ifindex:  int32(intf.Index),
     }
     // Take our socket and bind it 
-    if _, _, e := syscall.Syscall(syscall.SYS_BIND, uintptr(fd),
-        uintptr(unsafe.Pointer(&sll)), unsafe.Sizeof(sll)); e > 0 {
+    _, _, e := syscall.Syscall(syscall.SYS_BIND, 
+                               uintptr(fd),
+                               uintptr(unsafe.Pointer(&sll)), 
+                               unsafe.Sizeof(sll))
+    if e > 0 {
         return nil, e
     }
-    return &PFConn{
+    return &RawSock{
         fd:   fd,
         intf: intf,
     }, nil
 }
 
-func (c *PFConn) Read(b []byte) (int, *syscall.RawSockaddrLinklayer, error) {
+func (c *RawSock) Read(b []byte) (int, *syscall.RawSockaddrLinklayer, error) {
     var sll syscall.RawSockaddrLinklayer
     size := unsafe.Sizeof(sll)
-    r1, _, err := syscall.Syscall6(syscall.SYS_RECVFROM, uintptr(c.fd),
-                                 uintptr(unsafe.Pointer(&b[0])), 
-                                 uintptr(len(b)),
-                                 0, uintptr(unsafe.Pointer(&sll)), 
-                                 uintptr(unsafe.Pointer(&size)))
+    r1, _, err := syscall.Syscall6(syscall.SYS_RECVFROM, 
+                                   uintptr(c.fd),
+                                   uintptr(unsafe.Pointer(&b[0])), 
+                                   uintptr(len(b)),
+                                   0, 
+                                   uintptr(unsafe.Pointer(&sll)), 
+                                   uintptr(unsafe.Pointer(&size)))
     if err > 0 {
         return 0, nil, err
     }
     return int(r1), &sll, nil
 }
 
-func (c *PFConn) Write(b []byte) (n int, err error) {
-    // Write a raw ethernet frame to interface in PFConn
+func (c *RawSock) Write(b []byte) (n int, err error) {
+    // Write a raw ethernet frame to interface in RawSock
     var dst [8]uint8
     for i := 0; i < len(dst); i++ {
         dst[i] = uint8(b[i]) 
@@ -90,9 +98,13 @@ func (c *PFConn) Write(b []byte) (n int, err error) {
         Addr: dst,
         Halen: 6, 
     }
-    r1, _, e := syscall.Syscall6(syscall.SYS_SENDTO, uintptr(c.fd),
-        uintptr(unsafe.Pointer(&b[0])), uintptr(len(b)),
-        0, uintptr(unsafe.Pointer(&sll)), unsafe.Sizeof(sll))
+    r1, _, e := syscall.Syscall6(syscall.SYS_SENDTO, 
+                                 uintptr(c.fd),
+                                 uintptr(unsafe.Pointer(&b[0])), 
+                                 uintptr(len(b)),
+                                 0, 
+                                 uintptr(unsafe.Pointer(&sll)), 
+                                 unsafe.Sizeof(sll))
     if e > 0 {
         return 0, e
     }
@@ -106,18 +118,29 @@ func get_mac(ifname string) []byte {
     return src
 }
 
-func send_frame(dst []byte, ifname string) {
+func build_eth_frame(dst []byte, src []byte, payload []byte) []byte {
+    // Need a way to put a generic payload in an ethernet frame
+    // output needs to be a large byte slice which can be directly sent with Write
+    // Ethernet frame needs dst, src, type, payload
+    ether_type := []byte{0x08, 0x00}
+    var buf bytes.Buffer
+    // Can't write binary with nil pointer how to handle the TLVs?
+    binary.Write(&buf, binary.BigEndian, dst)
+    binary.Write(&buf, binary.BigEndian, src)
+    binary.Write(&buf, binary.BigEndian, ether_type)
+    binary.Write(&buf, binary.BigEndian, payload)
+    fmt.Println(hex.Dump(buf.Bytes()))
+    return buf.Bytes()
+}
+
+func send_frame(frame []byte, ifname string) {
+    // Take in a byte slice payload and send it
     // TODO: Separate this function into some kind of init so we don't open 
-    // a new PFConn every time
-    pf, e := NewPFConn(ifname)
+    // a new RawSock every time
+    pf, e := NewRawSock(ifname)
     if pf == nil || e != nil {
         fmt.Println("Failed to open packet socket", e)
     }
-    ether_type := []byte{0x08, 0x00}
-    hello_l1_lan := build_l1_iih_pdu([6]byte{0x11, 0x11, 0x11, 0x11, 0x11, 0x11})
-    var frame []byte = build_eth_frame(dst, get_mac(ifname), 
-                                       ether_type, 
-                                       serialize_isis_hello_pdu(hello_l1_lan))
     num_bytes, e := pf.Write(frame)
     if num_bytes <= 0 {
         fmt.Printf(e.Error())
@@ -126,7 +149,7 @@ func send_frame(dst []byte, ifname string) {
 
 func recv_frame(ifname string) [READ_BUF_SIZE]byte {
     // TODO: fix this hardcoded buffer size
-	pf, err := NewPFConnRecv(ifname)
+	pf, err := NewRawSockRecv(ifname)
 	if pf == nil || err != nil {
 		fmt.Printf("Failed to open pf socket for receiving", err)
 	}
@@ -142,6 +165,7 @@ func recv_frame(ifname string) [READ_BUF_SIZE]byte {
         } else {
             // Return anything that we did not send ourselves 
             if ! bytes.Equal(b[6:12], src) {
+                fmt.Println("SRC: ", src)
                 return b
             }
         }
