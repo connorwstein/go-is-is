@@ -2,7 +2,8 @@ version: '3.2'
 services: 
     node1:
         build: .
-        command: /opt/go-is-is/test.sh
+        #command: /opt/go-is-is/main
+        container_name: node1
         volumes:
             - type: bind
               source: .
@@ -11,15 +12,20 @@ services:
     node2:
         build: .
         #command: /opt/go-is-is/main
+        container_name: node2
         volumes:
             - type: bind
               source: .
               target: /opt/go-is-is
         image: is-is-node 
-    #test_node:
-    #    build: .
-    #    volumes:
-    #        - type: bind
-    #          source: .
-    #          target: /opt/go-is-is
-    #    image: is-is-node 
+    test_client:
+        build: .
+        container_name: test_client
+        volumes:
+            - type: bind
+              source: /var/run/docker.sock 
+              target: /var/run/docker.sock 
+            - type: bind
+              source: .
+              target: /opt/go-is-is
+        image: is-is-node 

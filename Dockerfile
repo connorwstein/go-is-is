@@ -17,4 +17,5 @@ WORKDIR /opt/go-is-is
 RUN /usr/local/go/bin/go get -u google.golang.org/grpc 
 RUN /usr/local/go/bin/go get -u github.com/golang/protobuf/protoc-gen-go
 ENV PATH="/usr/local/go/bin:/root/go/bin:${PATH}"
+RUN curl -fsSL https://get.docker.com | sh
 CMD tail -f /dev/null

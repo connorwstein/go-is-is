@@ -9,7 +9,8 @@ package main
 
 import (
     "log"
-//    "os"
+    "os"
+    "fmt"
     "golang.org/x/net/context"
     "google.golang.org/grpc"
     pb "../config"
@@ -34,7 +35,9 @@ func configure_sid(host string, port string, sid string) {
 
 func main() {
     // Configure SIDs of the two nodes
-    // Because the test node is the last node in the docker compose file it will have the ip address 172.18.0.4
-    configure_sid("172.18.0.2", "50051", "1111.1111.1111")
-    configure_sid("172.18.0.3", "50051", "1111.1111.1112")
+    node_ip_addresses := os.Args[1:]
+    fmt.Println(node_ip_addresses)
+    for k := 0; k < len(node_ip_addresses); k++ {
+        configure_sid(node_ip_addresses[k], "50051", fmt.Sprintf("1111.1111.%d", k + 1))
+    }
 }

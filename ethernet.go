@@ -10,7 +10,7 @@ import (
     "syscall"
 	"unsafe"
     "encoding/binary"
-    "encoding/hex"
+//     "encoding/hex"
 )
 
 const (
@@ -129,7 +129,7 @@ func build_eth_frame(dst []byte, src []byte, payload []byte) []byte {
     binary.Write(&buf, binary.BigEndian, src)
     binary.Write(&buf, binary.BigEndian, ether_type)
     binary.Write(&buf, binary.BigEndian, payload)
-    fmt.Println(hex.Dump(buf.Bytes()))
+//     fmt.Println(hex.Dump(buf.Bytes()))
     return buf.Bytes()
 }
 

@@ -99,10 +99,14 @@ func send_hello() {
 }
 
 func recv_hello() {
-    // Blocks until a hello is available
+    // Blocks until a frame is available
+    // Drop the frame unless it is the special multicast mac
+    l1_lan_hello_dst = []byte{0x01, 0x80, 0xc2, 0x00, 0x00, 0x14}
     hello := recv_frame("eth0")
-    fmt.Printf("Got hello from %X:%X:%X:%X:%X:%X\n", 
-               hello[6], hello[7], hello[8], hello[9], hello[10], hello[11])
-    fmt.Println(hex.Dump(hello[:]))
+    if bytes.Equal(hello[0:6],l1_lan_hello_dst) {
+        fmt.Printf("Got hello from %X:%X:%X:%X:%X:%X\n", 
+                   hello[6], hello[7], hello[8], hello[9], hello[10], hello[11])
+        fmt.Println(hex.Dump(hello[:]))
+    }
 }
 

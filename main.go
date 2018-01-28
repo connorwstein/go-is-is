@@ -38,6 +38,8 @@ func hello_send() {
     for {
         if cfg.sid != "" {
             // Send hello including the SID
+            // Now have a system id
+            fmt.Println("Have a sid - sending hello")
             send_hello()
         }
         // After sending we update the adjacency to NEW
@@ -62,7 +64,7 @@ type server struct{}
 
 func (s *server) ConfigureSystemID(ctx context.Context, in *pb.SystemIDRequest) (*pb.SystemIDReply, error) {
     cfg.sid = in.Sid
-    fmt.Println("Got SID request, setting SID to" + cfg.sid)
+    fmt.Println("Got SID request, setting SID to " + cfg.sid)
     // Returning a pointer to the system ID reply struct with a message acknowledging that it was 
     // successfully configured.
     // Note that even through the proto has a the field defined with lowercase, it is converted
@@ -98,11 +100,11 @@ func main() {
 	// Start a couple go routines to communicate with other nodes
 	// to establish adjacencies 
     // Multicast mac address used in IS-IS hellos
-//     wg.Add(1)
-//     go hello_send()
+    wg.Add(1)
+    go hello_send()
     wg.Add(1)
     go hello_recv()
-//     wg.Add(1)
-//     go start_grpc()
+    wg.Add(1)
+    go start_grpc()
     wg.Wait()
 }
