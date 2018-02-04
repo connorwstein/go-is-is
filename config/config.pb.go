@@ -8,6 +8,8 @@ It is generated from these files:
 	config.proto
 
 It has these top-level messages:
+	StateRequest
+	StateReply
 	SystemIDRequest
 	SystemIDReply
 */
@@ -33,6 +35,38 @@ var _ = math.Inf
 // proto package needs to be updated.
 const _ = proto.ProtoPackageIsVersion2 // please upgrade the proto package
 
+type StateRequest struct {
+	Dummy string `protobuf:"bytes,1,opt,name=dummy" json:"dummy,omitempty"`
+}
+
+func (m *StateRequest) Reset()                    { *m = StateRequest{} }
+func (m *StateRequest) String() string            { return proto.CompactTextString(m) }
+func (*StateRequest) ProtoMessage()               {}
+func (*StateRequest) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{0} }
+
+func (m *StateRequest) GetDummy() string {
+	if m != nil {
+		return m.Dummy
+	}
+	return ""
+}
+
+type StateReply struct {
+	Adj string `protobuf:"bytes,1,opt,name=adj" json:"adj,omitempty"`
+}
+
+func (m *StateReply) Reset()                    { *m = StateReply{} }
+func (m *StateReply) String() string            { return proto.CompactTextString(m) }
+func (*StateReply) ProtoMessage()               {}
+func (*StateReply) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{1} }
+
+func (m *StateReply) GetAdj() string {
+	if m != nil {
+		return m.Adj
+	}
+	return ""
+}
+
 // The request message containing the system id to use
 type SystemIDRequest struct {
 	Sid string `protobuf:"bytes,1,opt,name=sid" json:"sid,omitempty"`
@@ -41,7 +75,7 @@ type SystemIDRequest struct {
 func (m *SystemIDRequest) Reset()                    { *m = SystemIDRequest{} }
 func (m *SystemIDRequest) String() string            { return proto.CompactTextString(m) }
 func (*SystemIDRequest) ProtoMessage()               {}
-func (*SystemIDRequest) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{0} }
+func (*SystemIDRequest) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{2} }
 
 func (m *SystemIDRequest) GetSid() string {
 	if m != nil {
@@ -58,7 +92,7 @@ type SystemIDReply struct {
 func (m *SystemIDReply) Reset()                    { *m = SystemIDReply{} }
 func (m *SystemIDReply) String() string            { return proto.CompactTextString(m) }
 func (*SystemIDReply) ProtoMessage()               {}
-func (*SystemIDReply) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{1} }
+func (*SystemIDReply) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{3} }
 
 func (m *SystemIDReply) GetMessage() string {
 	if m != nil {
@@ -68,6 +102,8 @@ func (m *SystemIDReply) GetMessage() string {
 }
 
 func init() {
+	proto.RegisterType((*StateRequest)(nil), "config.StateRequest")
+	proto.RegisterType((*StateReply)(nil), "config.StateReply")
 	proto.RegisterType((*SystemIDRequest)(nil), "config.SystemIDRequest")
 	proto.RegisterType((*SystemIDReply)(nil), "config.SystemIDReply")
 }
@@ -144,17 +180,86 @@ var _Configure_serviceDesc = grpc.ServiceDesc{
 	Metadata: "config.proto",
 }
 
+// Client API for State service
+
+type StateClient interface {
+	GetState(ctx context.Context, in *StateRequest, opts ...grpc.CallOption) (*StateReply, error)
+}
+
+type stateClient struct {
+	cc *grpc.ClientConn
+}
+
+func NewStateClient(cc *grpc.ClientConn) StateClient {
+	return &stateClient{cc}
+}
+
+func (c *stateClient) GetState(ctx context.Context, in *StateRequest, opts ...grpc.CallOption) (*StateReply, error) {
+	out := new(StateReply)
+	err := grpc.Invoke(ctx, "/config.State/GetState", in, out, c.cc, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// Server API for State service
+
+type StateServer interface {
+	GetState(context.Context, *StateRequest) (*StateReply, error)
+}
+
+func RegisterStateServer(s *grpc.Server, srv StateServer) {
+	s.RegisterService(&_State_serviceDesc, srv)
+}
+
+func _State_GetState_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateServer).GetState(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/config.State/GetState",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateServer).GetState(ctx, req.(*StateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+var _State_serviceDesc = grpc.ServiceDesc{
+	ServiceName: "config.State",
+	HandlerType: (*StateServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "GetState",
+			Handler:    _State_GetState_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "config.proto",
+}
+
 func init() { proto.RegisterFile("config.proto", fileDescriptor0) }
 
 var fileDescriptor0 = []byte{
-	// 140 bytes of a gzipped FileDescriptorProto
+	// 209 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xe2, 0xe2, 0x49, 0xce, 0xcf, 0x4b,
-	0xcb, 0x4c, 0xd7, 0x2b, 0x28, 0xca, 0x2f, 0xc9, 0x17, 0x62, 0x83, 0xf0, 0x94, 0x94, 0xb9, 0xf8,
-	0x83, 0x2b, 0x8b, 0x4b, 0x52, 0x73, 0x3d, 0x5d, 0x82, 0x52, 0x0b, 0x4b, 0x53, 0x8b, 0x4b, 0x84,
-	0x04, 0xb8, 0x98, 0x8b, 0x33, 0x53, 0x24, 0x18, 0x15, 0x18, 0x35, 0x38, 0x83, 0x40, 0x4c, 0x25,
-	0x4d, 0x2e, 0x5e, 0x84, 0xa2, 0x82, 0x9c, 0x4a, 0x21, 0x09, 0x2e, 0xf6, 0xdc, 0xd4, 0xe2, 0xe2,
-	0xc4, 0xf4, 0x54, 0xa8, 0x32, 0x18, 0xd7, 0x28, 0x88, 0x8b, 0xd3, 0x19, 0x6c, 0x72, 0x69, 0x51,
-	0xaa, 0x90, 0x2b, 0x97, 0x20, 0x9c, 0x03, 0x33, 0x40, 0x48, 0x5c, 0x0f, 0xea, 0x10, 0x34, 0x7b,
-	0xa5, 0x44, 0x31, 0x25, 0x0a, 0x72, 0x2a, 0x95, 0x18, 0x92, 0xd8, 0xc0, 0x4e, 0x36, 0x06, 0x04,
-	0x00, 0x00, 0xff, 0xff, 0xb1, 0x98, 0xc2, 0x3d, 0xc2, 0x00, 0x00, 0x00,
+	0xcb, 0x4c, 0xd7, 0x2b, 0x28, 0xca, 0x2f, 0xc9, 0x17, 0x62, 0x83, 0xf0, 0x94, 0x54, 0xb8, 0x78,
+	0x82, 0x4b, 0x12, 0x4b, 0x52, 0x83, 0x52, 0x0b, 0x4b, 0x53, 0x8b, 0x4b, 0x84, 0x44, 0xb8, 0x58,
+	0x53, 0x4a, 0x73, 0x73, 0x2b, 0x25, 0x18, 0x15, 0x18, 0x35, 0x38, 0x83, 0x20, 0x1c, 0x25, 0x39,
+	0x2e, 0x2e, 0xa8, 0xaa, 0x82, 0x9c, 0x4a, 0x21, 0x01, 0x2e, 0xe6, 0xc4, 0x94, 0x2c, 0xa8, 0x0a,
+	0x10, 0x53, 0x49, 0x99, 0x8b, 0x3f, 0xb8, 0xb2, 0xb8, 0x24, 0x35, 0xd7, 0xd3, 0x05, 0x66, 0x90,
+	0x00, 0x17, 0x73, 0x71, 0x66, 0x0a, 0x4c, 0x51, 0x71, 0x66, 0x8a, 0x92, 0x26, 0x17, 0x2f, 0x42,
+	0x11, 0xc8, 0x1c, 0x09, 0x2e, 0xf6, 0xdc, 0xd4, 0xe2, 0xe2, 0xc4, 0xf4, 0x54, 0xa8, 0x32, 0x18,
+	0xd7, 0x28, 0x88, 0x8b, 0xd3, 0x19, 0xec, 0xbe, 0xd2, 0xa2, 0x54, 0x21, 0x57, 0x2e, 0x41, 0x38,
+	0x07, 0x66, 0x80, 0x90, 0xb8, 0x1e, 0xd4, 0x3b, 0x68, 0xf6, 0x4a, 0x89, 0x62, 0x4a, 0x14, 0xe4,
+	0x54, 0x2a, 0x31, 0x18, 0xd9, 0x73, 0xb1, 0x82, 0xfd, 0x20, 0x64, 0xc6, 0xc5, 0xe1, 0x9e, 0x5a,
+	0x02, 0x61, 0x8b, 0xc0, 0x55, 0x23, 0x05, 0x82, 0x94, 0x10, 0x9a, 0x28, 0xd8, 0x80, 0x24, 0x36,
+	0x70, 0xc8, 0x19, 0x03, 0x02, 0x00, 0x00, 0xff, 0xff, 0xb6, 0xff, 0x4e, 0xc3, 0x49, 0x01, 0x00,
+	0x00,
 }

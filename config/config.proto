@@ -9,6 +9,18 @@ service Configure {
     rpc ConfigureSystemID (SystemIDRequest) returns (SystemIDReply) {}
 }
 
+service State {
+    rpc GetState (StateRequest) returns (StateReply) {}
+}
+
+message StateRequest {
+    string dummy = 1;
+}
+
+message StateReply {
+    string adj = 1;
+}
+
 // The request message containing the system id to use
 message SystemIDRequest {
     string sid= 1;

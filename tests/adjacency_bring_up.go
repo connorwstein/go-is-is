@@ -11,6 +11,7 @@ import (
     "log"
     "os"
     "fmt"
+    "time"
     "golang.org/x/net/context"
     "google.golang.org/grpc"
     pb "../config"
@@ -33,11 +34,36 @@ func configure_sid(host string, port string, sid string) {
     log.Printf("SID configure result: %s", r.Message)
 }
 
+func get_state(host string, port string) {
+    // TODO: reuse this connection
+    target := [2]string{host, port}
+    conn, err := grpc.Dial(strings.Join(target[:], ":"), grpc.WithInsecure())
+    if err != nil {
+        log.Fatalf("Failed to connect to gRPC server: %v", err)
+    }
+    defer conn.Close()
+
+    c := pb.NewStateClient(conn)
+    
+    r, err := c.GetState(context.Background(), &pb.StateRequest{Dummy: ""})
+    if err != nil {
+        log.Fatalf("Unable to get state: %v", err)
+    }
+    log.Printf("State response %s", r.Adj)
+}
+
 func main() {
     // Configure SIDs of the two nodes
     node_ip_addresses := os.Args[1:]
     fmt.Println(node_ip_addresses)
     for k := 0; k < len(node_ip_addresses); k++ {
-        configure_sid(node_ip_addresses[k], "50051", fmt.Sprintf("1111.1111.%d", k + 1))
+        configure_sid(node_ip_addresses[k], "50051", fmt.Sprintf("1111.1111.111%d", k + 1))
+    }
+    // Poll for adjacency establishment
+    for {
+        for k := 0; k < len(node_ip_addresses); k++ {
+            get_state(node_ip_addresses[k], "50051")
+        }
+        time.Sleep(5000 * time.Millisecond)
     }
 }
