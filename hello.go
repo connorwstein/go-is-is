@@ -135,7 +135,7 @@ func deserialize_isis_hello_pdu(raw_bytes []byte) *IsisLANHelloPDU {
     return &hello
 }
 
-func send_hello(sid string, neighbors_tlv *IsisTLV) {
+func send_hello(intf *Intf, sid string, neighbors_tlv *IsisTLV) {
     // May need to send a hello with a neighbor tlv
     // Convert the sid string to an array of 6 bytes
     sid = strings.Replace(sid, ".", "", 6)
@@ -151,7 +151,9 @@ func send_hello(sid string, neighbors_tlv *IsisTLV) {
     }
     fmt.Println("Sending hello with tlv:", hello_l1_lan.first_tlv)
     fmt.Println(l1_lan_hello_dst)
-    send_frame(build_eth_frame(l1_lan_hello_dst, get_mac("eth0"), serialize_isis_hello_pdu(hello_l1_lan)), "eth0")
+    send_frame(build_eth_frame(l1_lan_hello_dst, 
+                               get_mac(intf.name), 
+                               serialize_isis_hello_pdu(hello_l1_lan)), intf.name)
 }
 
 type HelloResponse struct {

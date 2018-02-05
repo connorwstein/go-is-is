@@ -183,6 +183,7 @@ var _Configure_serviceDesc = grpc.ServiceDesc{
 // Client API for State service
 
 type StateClient interface {
+	// Could also support streaming updates out this system ?
 	GetState(ctx context.Context, in *StateRequest, opts ...grpc.CallOption) (*StateReply, error)
 }
 
@@ -206,6 +207,7 @@ func (c *stateClient) GetState(ctx context.Context, in *StateRequest, opts ...gr
 // Server API for State service
 
 type StateServer interface {
+	// Could also support streaming updates out this system ?
 	GetState(context.Context, *StateRequest) (*StateReply, error)
 }
 

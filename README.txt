@@ -2,21 +2,19 @@ Project
 - Implement IS-IS between using containers to represent IS-IS nodes
 - Send IS-IS packets inside raw ethernet frames between the containers 
 - Send configuration in via gRPC
-    - First piece of config that is required is SID and interfaces
-    - Should I use a proto file to define the actual messages between routers ? Would that no longer be to spec?
 - Docker-compose to bring up the topology
 - Docker containers are connected initially via the docker bridge so all containers are reachable  i.e. one big LAN by default
-- How to set up p2p links ? Use a user-defined docker network?
-- Adjacency and hello LSPs
-    - Requires at least two goroutines one for sending hellos and one for receiving
-    - 3 way handshake for IIH: R1 sends a broadcast mac IIH frame and marks the adjacency as NEW, 
-                               R2 receives this and slaps the senders mac in TLV IS-Neighbor and sends it back, then 
-                               R1 receives this IIH with his own mac in it and sends back a third IIH with the senders mac (R2) in the TLV, 
-                               then marks the adjacency as UP.
-- Docker-machine settings needed for this to work:
-echo 0 > /proc/sys/net/bridge/bridge-nf-call-iptables
-echo 0 > /sys/devices/virtual/net/br-c289e1f46025/bridge/multicast_snooping
+- Can use a bunch of custom defined networks and have nodes members of various networks to create a topology 
+which will be learned dynamically via IS-IS, handling container failures etc. To start we'll use 3 nodes and 2 networks, where one node is an intermediate hop between the other two:
 
+node1 <----> node2 <----> node3
+
+Node 1 and 3 are members of two different networks and node 2 is a member of both with two virtual ethernet interfaces. The test client
+node which pushes the config in is a member of both networks so it can reach all nodes.
+
+- Docker-machine settings needed for this to work (without this the ethernet frames get dropped by the docker linux bridge) --> see config_docker_machine.sh
+
+USAGE:
 Topology bring up:
 docker-compose build
 docker-compose up
@@ -26,10 +24,21 @@ docker-compose exec -it node1 bash
 ./main
 docker-compose exec -it node2 bash 
 ./main
+docker-compose exec -it node3 bash 
+./main
 
 Run the tests:
 docker exec -it test_client bash
 ./run_tests
 
+DONE:
 - The adjacency test configures the SIDs on both nodes via gRPC, which causes them to start flooding 
-the docker bridge with the multicast mac address
+the docker bridge with the multicast mac address and establish adjacencies with any other containers 
+running the is-is program
+
+TODO:
+- GetState for interfaces
+- Adjacency establishment for nodes with multiple interfaces
+- LSP exchange to build a LSP database on each node
+- Run SPF on the LSP database
+- Psuedonode support and DIS election process --> this can be like a single container in  

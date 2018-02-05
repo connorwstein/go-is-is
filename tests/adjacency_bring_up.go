@@ -11,7 +11,7 @@ import (
     "log"
     "os"
     "fmt"
-    "time"
+//     "time"
     "golang.org/x/net/context"
     "google.golang.org/grpc"
     pb "../config"
@@ -59,11 +59,11 @@ func main() {
     for k := 0; k < len(node_ip_addresses); k++ {
         configure_sid(node_ip_addresses[k], "50051", fmt.Sprintf("1111.1111.111%d", k + 1))
     }
-    // Poll for adjacency establishment
-    for {
-        for k := 0; k < len(node_ip_addresses); k++ {
-            get_state(node_ip_addresses[k], "50051")
-        }
-        time.Sleep(5000 * time.Millisecond)
-    }
+//     // Poll for adjacency establishment
+//     for {
+//         for k := 0; k < len(node_ip_addresses); k++ {
+//             get_state(node_ip_addresses[k], "50051")
+//         }
+//         time.Sleep(5000 * time.Millisecond)
+//     }
 }

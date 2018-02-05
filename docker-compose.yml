@@ -9,6 +9,8 @@ services:
               source: .
               target: /opt/go-is-is
         image: is-is-node
+        networks:
+            - testnet1
     node2:
         build: .
         #command: /opt/go-is-is/main
@@ -18,6 +20,20 @@ services:
               source: .
               target: /opt/go-is-is
         image: is-is-node 
+        networks:
+            - testnet1
+            - testnet2
+    node3:
+        build: .
+        #command: /opt/go-is-is/main
+        container_name: node3
+        volumes:
+            - type: bind
+              source: .
+              target: /opt/go-is-is
+        image: is-is-node 
+        networks:
+            - testnet2
     test_client:
         build: .
         container_name: test_client
@@ -29,3 +45,12 @@ services:
               source: .
               target: /opt/go-is-is
         image: is-is-node 
+        networks:
+            - testnet1
+            - testnet2
+
+networks:
+  testnet1:
+    driver: bridge
+  testnet2:
+    driver: bridge

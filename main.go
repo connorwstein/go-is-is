@@ -4,9 +4,9 @@ import (
     "fmt"
     "time"
     "bytes"
-    "os"
-    "os/signal"
-    "syscall"
+//     "os"
+//     "os/signal"
+//     "syscall"
     "sync"
     "encoding/hex"
     "log"
@@ -15,6 +15,7 @@ import (
     "google.golang.org/grpc"
     pb "./config"
     "google.golang.org/grpc/reflection"
+	"reflect"
 )
 
 var wg sync.WaitGroup
@@ -22,36 +23,42 @@ var l1_lan_hello_dst []byte
 var cfg Config
 
 const (
-    port = ":50051"
+    GRPC_CFG_SERVER_PORT = ":50051"
 )
 
 type Config struct {
     sid string // Format is 6 bytes in a hex encoded string, with a '.' between bytes 2-3 and 4-5
+	interfaces []Intf // slice of interfaces
     adjacency Adjacency // Right now only one interface, so just a single adjacency
 }
 
+type Intf struct {
+	name string
+	prefix net.IP
+	mask net.IPMask
+}
+
 type Adjacency struct {
-    intf string
+    intf string // TODO: should be a pointer to the Intf struct
     state string // Can be NEW, INITIALIZING or UP
     neighbor_system_id string 
 }
 
+
 func hello_send() {
     // Send hellos every 2 seconds after a system ID has been configured
+	// on all interfaces
     for {
         fmt.Printf("SEND ADJACENCY STATE: %v\n", cfg.adjacency)
         if cfg.sid != "" {
-            // Send hello including the SID
-            // Now have a system id
-            // If the adjacency is NEW, set it to Initializing and send 
-            // an empty hello
-            // If the adjacency is INITIALIZING  
-            // 
-            // macs (the ACK), then we finally mark the adjacency as UP
-    
             fmt.Println("Have a sid - sending hello")
             if cfg.adjacency.state != "UP"  {
-                send_hello(cfg.sid, nil)
+// 				for _, intf := range cfg.interfaces {
+//                 	send_hello(&intf, cfg.sid, nil)
+// 				}
+				var intf Intf
+				intf.name = "eth0"
+				send_hello(&intf, cfg.sid, nil)
             }
         }
         // After sending we update the adjacency to NEW
@@ -87,7 +94,9 @@ func hello_recv() {
                     fmt.Println("ADJACENCY INIT")
                     cfg.adjacency.state = "INIT"
                 }
-                send_hello(cfg.sid, &neighbors_tlv)
+				var intf Intf
+				intf.name = "eth0"
+                send_hello(&intf, cfg.sid, &neighbors_tlv)
             } else {
                 // If we do have the neighbors tlv, check if it has our own mac in it
                 // if it does then we know the adjacency is established
@@ -127,7 +136,8 @@ func (s *server) GetState(ctx context.Context, in *pb.StateRequest) (*pb.StateRe
 }
 
 func start_grpc() {
-    lis, err := net.Listen("tcp", port)
+    // listening on eth0
+    lis, err := net.Listen("tcp", GRPC_CFG_SERVER_PORT)
     if err != nil {
         log.Fatalf("gRPC server failed to start listening: %v", err)
     }
@@ -141,25 +151,67 @@ func start_grpc() {
     }
 }
 
+func getLocalIntfAddresses() {
+    ifaces, err := net.Interfaces()
+	cfg.interfaces = make([]Intf, len(ifaces) - 1) // Ignore loopback
+	intf_index := 0
+    if err != nil {
+        fmt.Print(fmt.Errorf("getLocalIntfAddresses: %+v\n", err.Error()))
+        return
+    }
+    for _, i := range ifaces {
+		if i.Name == "lo" {
+			continue
+		}	
+        addrs, err := i.Addrs()
+        if err != nil {
+            fmt.Print(fmt.Errorf("getLocalIntfAddresses: %+v\n", err.Error()))
+            continue
+        }
+        for _, a := range addrs {
+            switch v := a.(type) {
+            case *net.IPNet:
+                fmt.Printf("%v : %s\n", i.Name, v)
+				var new_intf Intf
+				new_intf.name = i.Name
+				new_intf.prefix = v.IP
+				new_intf.mask = v.Mask
+				cfg.interfaces[intf_index] = new_intf
+				intf_index++
+			default:
+				fmt.Println("Not an ip address", v)
+				fmt.Println(reflect.TypeOf(v))
+            }
+
+        }
+    }
+}
+
+
 func main() {
     // This is a special multicast mac address
     l1_lan_hello_dst = []byte{0x01, 0x80, 0xc2, 0x00, 0x00, 0x14}
     cfg.sid = "" 
-    c := make(chan os.Signal, 2)
-    signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-    go func() {
-        <-c
-        cleanup()
-        os.Exit(1)
-    }()
-	// Start a couple go routines to communicate with other nodes
-	// to establish adjacencies 
-    // Multicast mac address used in IS-IS hellos
-    wg.Add(1)
-    go hello_send()
-    wg.Add(1)
-    go hello_recv()
-    wg.Add(1)
-    go start_grpc()
-    wg.Wait()
+//     c := make(chan os.Signal, 2)
+//     signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+//     go func() {
+//         <-c
+//         cleanup()
+//         os.Exit(1)
+//     }()
+    // Determine the interfaces available on the container
+    // and add that to the configuration
+	getLocalIntfAddresses()    
+	fmt.Println(cfg.interfaces)
+
+// 	// Start a couple go routines to communicate with other nodes
+// 	// to establish adjacencies 
+//     // Multicast mac address used in IS-IS hellos
+//     wg.Add(1)
+//     go hello_send()
+//     wg.Add(1)
+//     go hello_recv()
+//     wg.Add(1)
+//     go start_grpc()
+//     wg.Wait()
 }
