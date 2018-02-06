@@ -4,9 +4,9 @@ import (
     "fmt"
     "time"
     "bytes"
-//     "os"
-//     "os/signal"
-//     "syscall"
+    "os"
+    "os/signal"
+    "syscall"
     "sync"
     "encoding/hex"
     "log"
@@ -127,11 +127,19 @@ func (s *server) ConfigureSystemID(ctx context.Context, in *pb.SystemIDRequest) 
 }
 
 func (s *server) GetState(ctx context.Context, in *pb.StateRequest) (*pb.StateReply, error) {
-    fmt.Println("Got state request, dumping state")
+    fmt.Println("Got state request, dumping state", cfg)
+    interfaces_string := "" // TODO: optimize
+    for _, i := range cfg.interfaces {
+        interfaces_string += i.prefix.String() + " " + i.mask.String() + ", "
+    }
+    var reply pb.StateReply
+    reply.Intf = interfaces_string 
     if cfg.adjacency.state != "UP" {
-        return &pb.StateReply{Adj: "Adjacency not yet established"}, nil
+        reply.Adj = "Adjacency not yet established"
+        return &reply, nil
     } else {
-        return &pb.StateReply{Adj: "Adjacency established with " + cfg.adjacency.neighbor_system_id}, nil
+        reply.Adj = "Adjacency established with " + cfg.adjacency.neighbor_system_id
+        return &reply, nil
     }
 }
 
@@ -154,12 +162,14 @@ func start_grpc() {
 func getLocalIntfAddresses() {
     ifaces, err := net.Interfaces()
 	cfg.interfaces = make([]Intf, len(ifaces) - 1) // Ignore loopback
+    fmt.Println(len(ifaces))
 	intf_index := 0
     if err != nil {
         fmt.Print(fmt.Errorf("getLocalIntfAddresses: %+v\n", err.Error()))
         return
     }
     for _, i := range ifaces {
+        // Ignore loopback interfaces
 		if i.Name == "lo" {
 			continue
 		}	
@@ -170,14 +180,17 @@ func getLocalIntfAddresses() {
         }
         for _, a := range addrs {
             switch v := a.(type) {
-            case *net.IPNet:
+            case *net.IPNet: //Checking if this type of address a (v) is a pointer to a net.IPNet struct
                 fmt.Printf("%v : %s\n", i.Name, v)
-				var new_intf Intf
-				new_intf.name = i.Name
-				new_intf.prefix = v.IP
-				new_intf.mask = v.Mask
-				cfg.interfaces[intf_index] = new_intf
-				intf_index++
+                // Only work with v4 addresses for now
+                if v.IP.To4() != nil {
+                    var new_intf Intf
+                    new_intf.name = i.Name
+                    new_intf.prefix = v.IP
+                    new_intf.mask = v.Mask
+                    cfg.interfaces[intf_index] = new_intf
+                    intf_index++
+                }
 			default:
 				fmt.Println("Not an ip address", v)
 				fmt.Println(reflect.TypeOf(v))
@@ -192,13 +205,13 @@ func main() {
     // This is a special multicast mac address
     l1_lan_hello_dst = []byte{0x01, 0x80, 0xc2, 0x00, 0x00, 0x14}
     cfg.sid = "" 
-//     c := make(chan os.Signal, 2)
-//     signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-//     go func() {
-//         <-c
-//         cleanup()
-//         os.Exit(1)
-//     }()
+    c := make(chan os.Signal, 2)
+    signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+    go func() {
+        <-c
+        cleanup()
+        os.Exit(1)
+    }()
     // Determine the interfaces available on the container
     // and add that to the configuration
 	getLocalIntfAddresses()    
@@ -211,7 +224,7 @@ func main() {
 //     go hello_send()
 //     wg.Add(1)
 //     go hello_recv()
-//     wg.Add(1)
-//     go start_grpc()
-//     wg.Wait()
+    wg.Add(1)
+    go start_grpc()
+    wg.Wait()
 }

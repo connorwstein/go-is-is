@@ -7,9 +7,6 @@ package config;
 
 service Configure {
     rpc ConfigureSystemID (SystemIDRequest) returns (SystemIDReply) {}
-    // Tell the IS-IS system which interfaces is has available
-    // And configure the IP addresses on that interface 
-    //rpc ConfigureIntf (IntfRequest) returns (IntfResponse) {}
 }
 
 service State {
@@ -18,21 +15,13 @@ service State {
 }
 
 message StateRequest {
-    string dummy = 1;
+    string sh_run = 1; // Like a show run command on a router
 }
 
 message StateReply {
     string adj = 1;
+    string intf = 2;
 }
-
-//message IntfRequest {
- //   string intf // eth0, eth1 etc.
-  //  string prefix // Use CIDR format
-//}
-
-//message IntfResponse {
- //   string intf_config_response
-//}
 
 // The request message containing the system id to use
 message SystemIDRequest {
