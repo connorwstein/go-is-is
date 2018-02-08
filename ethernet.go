@@ -4,12 +4,13 @@
 package main
 
 import (
-    "fmt"
+//     "fmt"
     "bytes"
     "net"
     "syscall"
 	"unsafe"
     "encoding/binary"
+    "github.com/golang/glog"
 //     "encoding/hex"
 )
 
@@ -23,6 +24,8 @@ type RawSock struct {
     fd   int
     intf *net.Interface
 }
+
+var RawSocks []RawSock // An array of raw sockets, one per interface
 
 func htons(host uint16) uint16 {
     return (host & 0xff) << 8 | (host >> 8)
@@ -57,10 +60,10 @@ func NewRawSockRecv(ifname string) (*RawSock, error) {
         Protocol: htons(ETH_P_ALL),
         Ifindex:  int32(intf.Index),
     }
-    // Take our socket and bind it 
-    _, _, e := syscall.Syscall(syscall.SYS_BIND, 
+    // Take our socket and bind it
+    _, _, e := syscall.Syscall(syscall.SYS_BIND,
                                uintptr(fd),
-                               uintptr(unsafe.Pointer(&sll)), 
+                               uintptr(unsafe.Pointer(&sll)),
                                unsafe.Sizeof(sll))
     if e > 0 {
         return nil, e
@@ -74,12 +77,12 @@ func NewRawSockRecv(ifname string) (*RawSock, error) {
 func (c *RawSock) Read(b []byte) (int, *syscall.RawSockaddrLinklayer, error) {
     var sll syscall.RawSockaddrLinklayer
     size := unsafe.Sizeof(sll)
-    r1, _, err := syscall.Syscall6(syscall.SYS_RECVFROM, 
+    r1, _, err := syscall.Syscall6(syscall.SYS_RECVFROM,
                                    uintptr(c.fd),
-                                   uintptr(unsafe.Pointer(&b[0])), 
+                                   uintptr(unsafe.Pointer(&b[0])),
                                    uintptr(len(b)),
-                                   0, 
-                                   uintptr(unsafe.Pointer(&sll)), 
+                                   0,
+                                   uintptr(unsafe.Pointer(&sll)),
                                    uintptr(unsafe.Pointer(&size)))
     if err > 0 {
         return 0, nil, err
@@ -91,19 +94,19 @@ func (c *RawSock) Write(b []byte) (n int, err error) {
     // Write a raw ethernet frame to interface in RawSock
     var dst [8]uint8
     for i := 0; i < len(dst); i++ {
-        dst[i] = uint8(b[i]) 
-    } 
+        dst[i] = uint8(b[i])
+    }
     sll := syscall.RawSockaddrLinklayer{
         Ifindex: int32(c.intf.Index),
         Addr: dst,
-        Halen: 6, 
+        Halen: 6,
     }
-    r1, _, e := syscall.Syscall6(syscall.SYS_SENDTO, 
+    r1, _, e := syscall.Syscall6(syscall.SYS_SENDTO,
                                  uintptr(c.fd),
-                                 uintptr(unsafe.Pointer(&b[0])), 
+                                 uintptr(unsafe.Pointer(&b[0])),
                                  uintptr(len(b)),
-                                 0, 
-                                 uintptr(unsafe.Pointer(&sll)), 
+                                 0,
+                                 uintptr(unsafe.Pointer(&sll)),
                                  unsafe.Sizeof(sll))
     if e > 0 {
         return 0, e
@@ -135,37 +138,36 @@ func build_eth_frame(dst []byte, src []byte, payload []byte) []byte {
 
 func send_frame(frame []byte, ifname string) {
     // Take in a byte slice payload and send it
-    // TODO: Separate this function into some kind of init so we don't open 
+    // TODO: Separate this function into some kind of init so we don't open
     // a new RawSock every time
     pf, e := NewRawSock(ifname)
     if pf == nil || e != nil {
-        fmt.Println("Failed to open packet socket", e)
+        glog.Error("Failed to open packet socket", e)
     }
     num_bytes, e := pf.Write(frame)
     if num_bytes <= 0 {
-        fmt.Printf(e.Error())
-    } 
+        glog.Error(e.Error())
+    }
 }
 
 func recv_frame(ifname string) [READ_BUF_SIZE]byte {
-    // TODO: fix this hardcoded buffer size
+    // TODO: tune the buffer size
+    // keep the socket open
 	pf, err := NewRawSockRecv(ifname)
 	if pf == nil || err != nil {
-		fmt.Printf("Failed to open pf socket for receiving", err)
+		glog.Error("Failed to open pf socket for receiving", err)
 	}
     src := get_mac(ifname)
     var b [READ_BUF_SIZE]byte
-    fmt.Println("Reading from socket...")
     // Only return once a packet has been received which is not ours
     for {
-        // Blocks until something is available 
+        // Blocks until something is available
         _, _, e := pf.Read(b[:])
         if e != nil {
-            fmt.Println("Error reading bytes: ", e)
+            glog.Error("Error reading bytes: ", e)
         } else {
-            // Return anything that we did not send ourselves 
+            // Return anything that we did not send ourselves
             if ! bytes.Equal(b[6:12], src) {
-                fmt.Println("SRC: ", src)
                 return b
             }
         }

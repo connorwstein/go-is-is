@@ -56,14 +56,14 @@ func main() {
     // Configure SIDs of the two nodes
     node_ip_addresses := os.Args[1:]
     fmt.Println(node_ip_addresses)
-//     for k := 0; k < len(node_ip_addresses); k++ {
-//         configure_sid(node_ip_addresses[k], "50051", fmt.Sprintf("1111.1111.111%d", k + 1))
-//     }
+    for k := 0; k < len(node_ip_addresses); k++ {
+        configure_sid(node_ip_addresses[k], "50051", fmt.Sprintf("1111.1111.111%d", k + 1))
+    }
     // Poll for adjacency establishment
     for {
         for k := 0; k < len(node_ip_addresses); k++ {
              get_state(node_ip_addresses[k], "50051")
         }
-        time.Sleep(5000 * time.Millisecond)
+        time.Sleep(10000 * time.Millisecond)
    }
 }

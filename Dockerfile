@@ -16,6 +16,7 @@ RUN ln -s /usr/local/bin/protoc /usr/bin/protoc
 WORKDIR /opt/go-is-is
 RUN /usr/local/go/bin/go get -u google.golang.org/grpc 
 RUN /usr/local/go/bin/go get -u github.com/golang/protobuf/protoc-gen-go
+RUN /usr/local/go/bin/go get -u github.com/golang/glog
 ENV PATH="/usr/local/go/bin:/root/go/bin:${PATH}"
 RUN curl -fsSL https://get.docker.com | sh
 CMD tail -f /dev/null
