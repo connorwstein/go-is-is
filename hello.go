@@ -145,7 +145,7 @@ func sendHello(intf *Intf, sid string, neighbors_tlv *IsisTLV) {
                                  serializeIsisHelloPdu(hello_l1_lan)), intf.name)
 }
 
-func recvHello(intf *Intf) *HelloResponse {
+func recvHello(intf *Intf, helloChan chan [READ_BUF_SIZE]byte) *HelloResponse {
     // Blocks until a frame is available
     // Returns [READBUF_SIZE]byte including the full ethernet frame
     // This buf size needs to be big enough to at least get the length of the PDU
@@ -153,7 +153,7 @@ func recvHello(intf *Intf) *HelloResponse {
     // in the header in case it isn't all available at once
     
     // Blocks on the hello channel
-    hello := recvFrame(intf.name)
+    hello := <- helloChan
 
     // Drop the frame unless it is the special multicast mac
     if bytes.Equal(hello[0:6], l1_lan_hello_dst) {

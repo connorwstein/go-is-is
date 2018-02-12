@@ -197,19 +197,20 @@ func recvFrame(ifname string) [READ_BUF_SIZE]byte {
     }
 }
 
-// func recvPdus(ifname string, hello chan [READ_BUF_SIZE]byte, lsp chan [READ_BUF_SIZE]byte) {
-//     // Continuously read from the raw socks associated with the specified
-//     // interface, putting the packets on the appropriate channels
-//     // for the other goroutines to process 
-//     // pdu types:
-//     //  0x0F --> l1 lan hello
-//     //  0x12 --> l2 LSP
-//     buf := recvFrame(ifname) 
-//     // TODO: basic checks like length, checksum, auth
-// 
-//     // Check the common IS-IS header for the pdu type
-//     // This receive frame will have everything including the ethernet frame
-//     // 
-// }
+func recvPdus(ifname string, hello chan [READ_BUF_SIZE]byte) {
+    // Continuously read from the raw socks associated with the specified
+    // interface, putting the packets on the appropriate channels
+    // for the other goroutines to process 
+    // pdu types:
+    //  0x0F --> l1 lan hello
+    //  0x12 --> l2 LSP
+    for {
+        buf := recvFrame(ifname) 
+        // TODO: basic checks like length, checksum, auth
+        // Check the common IS-IS header for the pdu type
+        // This receive frame will have everything including the ethernet frame
+        hello <- buf  
+    }
+}
 
 

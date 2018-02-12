@@ -92,12 +92,12 @@ func hello_send(intf *Intf) {
     }
 }
 
-func hello_recv(intf *Intf) {
+func hello_recv(intf *Intf, helloChan chan [READ_BUF_SIZE]byte ) {
     // Forever receiving hellos on the passed interface
     // Updating the status of the interface as an adjacency is
     // established
     for {
-        rsp := recvHello(intf)
+        rsp := recvHello(intf, helloChan)
         // Can get a nil response for ethernet frames received
         // which are not destined for the IS-IS hello multicast address
         if rsp == nil {
@@ -270,13 +270,24 @@ func main() {
 	// to establish adjacencies. Each go routine can run
     // totally in parallel to establish adjacencies on each
     // interface
+    // Each goroutine blocks on the hello channel waiting for a hello pdu
+    // from the recvPdus goroutine
+    var helloChans []chan [READ_BUF_SIZE]byte
+    for i := 0; i < len(cfg.interfaces); i++ {
+        helloChans = append(helloChans, make(chan [READ_BUF_SIZE]byte))
+    }
     wg.Add(1)
     for _, intf := range cfg.interfaces {
         go hello_send(intf)
     }
     wg.Add(1)
-    for _, intf := range cfg.interfaces {
-        go hello_recv(intf)
+    for i, intf := range cfg.interfaces {
+        go hello_recv(intf, helloChans[i])
+    }
+    // TODO: one channel per PDU type
+    wg.Add(1)
+    for i, intf := range cfg.interfaces {
+        go recvPdus(intf.name, helloChans[i])
     }
     // Start the update process go routine which floods LSPs to all neighbors
     // and receives LSPs from neighbors
