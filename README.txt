@@ -39,5 +39,40 @@ running the is-is program
 
 TODO:
 - LSP exchange to build a LSP database on each node
+    - For this topology the final result on each node should be
+
+        1111.00-00  // Node 1
+            TLV 128 Internal Reachability
+                Prefix testnet1 metric 10
+        1112.00-00 // Node 2 
+            TLV 128 Internal Reachability
+                Prefix testnet1 metric 10
+                Prefix testnet2 metric 10 
+        1113.00-00 // Node 3
+            TLV 128 Internal Reachability
+                Prefix testnet2 metric 10
+            
 - Run SPF on the LSP database
+    - Given the above LSP DB there is actually only path for each prefix, will need a more complex topology in order to 
+    really test the SPF algorithm is working
+    - Something like:
+    
+    node1 -- node2 -- node3    
+      |                 |
+       -----------------
+    
+    In that case there will be a 2 hop path and a 1 hop path in order to reach testnet2 from node1, so SPF should prefer
+    the one hop path.
+
 - Psuedonode support and DIS election process
+- Handle level hierarchy
+- Detect adjacency failures (interface flaps etc.)
+- Add adjacency formation jitter
+- Verification of PDU length
+- PtoP link support
+- Crypto auth
+- Add checksums
+- Support hostname
+
+
+

@@ -4,6 +4,7 @@ services:
         build: .
         #command: /opt/go-is-is/main
         container_name: node1
+        privileged: true # for gdb
         volumes:
             - type: bind
               source: .
@@ -15,6 +16,7 @@ services:
         build: .
         #command: /opt/go-is-is/main
         container_name: node2
+        privileged: true
         volumes:
             - type: bind
               source: .
@@ -27,6 +29,7 @@ services:
         build: .
         #command: /opt/go-is-is/main
         container_name: node3
+        privileged: true
         volumes:
             - type: bind
               source: .
@@ -37,6 +40,7 @@ services:
     test_client:
         build: .
         container_name: test_client
+        privileged: true
         volumes:
             - type: bind
               source: /var/run/docker.sock 

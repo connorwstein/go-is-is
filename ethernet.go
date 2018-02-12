@@ -25,7 +25,20 @@ type RawSock struct {
     intf *net.Interface
 }
 
-var RawSocks []RawSock // An array of raw sockets, one per interface
+var RawSocks map[string][2]*RawSock // Map of interfaces to send and receive sockets
+
+type IsisPDUHeader struct {
+    // Common 8 byte header to all PDUs
+    // Note that the fields must be exported for the binary.Read 
+    Intra_domain_routeing_protocol_discriminator byte // 0x83
+    Pdu_length byte
+    Protocol_id byte
+    System_id_length byte
+    Pdu_type byte // first three bits are reserved and set to 0, next 5 bits are pdu type
+    Version byte
+    Reserved byte
+    Maximum_area_addresses byte
+}
 
 func htons(host uint16) uint16 {
     return (host & 0xff) << 8 | (host >> 8)
@@ -114,17 +127,18 @@ func (c *RawSock) Write(b []byte) (n int, err error) {
     return int(r1), e
 }
 
-func get_mac(ifname string) []byte {
+func getMac(ifname string) []byte {
     intf, _ := net.InterfaceByName(ifname)
     src := make([]byte, len(intf.HardwareAddr))
     copy(src, intf.HardwareAddr)
     return src
 }
 
-func build_eth_frame(dst []byte, src []byte, payload []byte) []byte {
+func buildEthernetFrame(dst []byte, src []byte, payload []byte) []byte {
     // Need a way to put a generic payload in an ethernet frame
     // output needs to be a large byte slice which can be directly sent with Write
     // Ethernet frame needs dst, src, type, payload
+    // TODO: figure out how to use encoding/gob here 
     ether_type := []byte{0x08, 0x00}
     var buf bytes.Buffer
     // Can't write binary with nil pointer how to handle the TLVs?
@@ -132,37 +146,46 @@ func build_eth_frame(dst []byte, src []byte, payload []byte) []byte {
     binary.Write(&buf, binary.BigEndian, src)
     binary.Write(&buf, binary.BigEndian, ether_type)
     binary.Write(&buf, binary.BigEndian, payload)
-//     fmt.Println(hex.Dump(buf.Bytes()))
     return buf.Bytes()
 }
 
-func send_frame(frame []byte, ifname string) {
-    // Take in a byte slice payload and send it
-    // TODO: Separate this function into some kind of init so we don't open
-    // a new RawSock every time
-    pf, e := NewRawSock(ifname)
-    if pf == nil || e != nil {
-        glog.Error("Failed to open packet socket", e)
+func ethernetInit() {
+    RawSocks = make(map[string][2]*RawSock)
+} 
+
+func ethernetIntfInit(ifname string) {
+    // Create raw send and receive sockets for given interface
+    send, err := NewRawSock(ifname)
+    if send == nil || err != nil {
+        glog.Error("Failed to open raw send socket", err)
     }
-    num_bytes, e := pf.Write(frame)
+	recv, err := NewRawSockRecv(ifname)
+	if recv == nil || err != nil {
+		glog.Error("Failed to open raw recv socket", err)
+	}
+    var value [2]*RawSock
+    value[0] = send
+    value[1] = recv
+    RawSocks[ifname] = value
+}
+
+func sendFrame(frame []byte, ifname string) {
+    // Take in a byte slice payload and send it
+    num_bytes, e := RawSocks[ifname][0].Write(frame)
     if num_bytes <= 0 {
         glog.Error(e.Error())
     }
 }
 
-func recv_frame(ifname string) [READ_BUF_SIZE]byte {
+func recvFrame(ifname string) [READ_BUF_SIZE]byte {
+    // Only return once a packet has been received which is not one
+    // we sent ourselves
     // TODO: tune the buffer size
-    // keep the socket open
-	pf, err := NewRawSockRecv(ifname)
-	if pf == nil || err != nil {
-		glog.Error("Failed to open pf socket for receiving", err)
-	}
-    src := get_mac(ifname)
+    src := getMac(ifname)
     var b [READ_BUF_SIZE]byte
-    // Only return once a packet has been received which is not ours
     for {
         // Blocks until something is available
-        _, _, e := pf.Read(b[:])
+        _, _, e := RawSocks[ifname][1].Read(b[:])
         if e != nil {
             glog.Error("Error reading bytes: ", e)
         } else {
@@ -173,3 +196,20 @@ func recv_frame(ifname string) [READ_BUF_SIZE]byte {
         }
     }
 }
+
+// func recvPdus(ifname string, hello chan [READ_BUF_SIZE]byte, lsp chan [READ_BUF_SIZE]byte) {
+//     // Continuously read from the raw socks associated with the specified
+//     // interface, putting the packets on the appropriate channels
+//     // for the other goroutines to process 
+//     // pdu types:
+//     //  0x0F --> l1 lan hello
+//     //  0x12 --> l2 LSP
+//     buf := recvFrame(ifname) 
+//     // TODO: basic checks like length, checksum, auth
+// 
+//     // Check the common IS-IS header for the pdu type
+//     // This receive frame will have everything including the ethernet frame
+//     // 
+// }
+
+

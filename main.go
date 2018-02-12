@@ -16,8 +16,10 @@ import (
     "google.golang.org/grpc"
     pb "./config"
     "google.golang.org/grpc/reflection"
-// 	"reflect"
+	"reflect"
     "github.com/golang/glog"
+    "runtime"
+    "strconv"
 )
 
 var wg sync.WaitGroup
@@ -49,7 +51,31 @@ type Intf struct {
 
 type Adjacency struct {
     state string // Can be NEW, INITIALIZING or UP
-    neighbor_system_id string
+    neighbor_system_id []byte 
+}
+
+func system_id_to_str(system_id []byte) string {
+    // Byte slice should be 6 bytes
+    if len(system_id) != 6 {
+        return "" 
+    }
+    result := ""
+    for i := 0; i < 3; i++ {
+        result += hex.EncodeToString(system_id[i*2:i*2 + 2])
+        if i != 2 {
+            result += "."
+        } 
+    }
+    return result
+}
+
+func getGID() uint64 {
+    b := make([]byte, 64)
+    b = b[:runtime.Stack(b, false)]
+    b = bytes.TrimPrefix(b, []byte("goroutine "))
+    b = b[:bytes.IndexByte(b, ' ')]
+    n, _ := strconv.ParseUint(string(b), 10, 64)
+    return n
 }
 
 func hello_send(intf *Intf) {
@@ -57,9 +83,9 @@ func hello_send(intf *Intf) {
 	// on the specified interface
     for {
         if cfg.sid != "" {
-            glog.Infof("Adjacency state on %v: %v", intf.name, intf.adj.state)
+            glog.Infof("Adjacency state on %v: %v goroutine ID %d", intf.name, intf.adj.state, getGID())
             if intf.adj.state != "UP" {
-                send_hello(intf, cfg.sid, nil)
+                sendHello(intf, cfg.sid, nil)
             }
         }
         time.Sleep(HELLO_INTERVAL * time.Millisecond)
@@ -71,14 +97,14 @@ func hello_recv(intf *Intf) {
     // Updating the status of the interface as an adjacency is
     // established
     for {
-        glog.Info(RECV_LOG_PREFIX, "Receving on intf: ", intf.name)
-        rsp := recv_hello(intf)
+        rsp := recvHello(intf)
         // Can get a nil response for ethernet frames received
         // which are not destined for the IS-IS hello multicast address
         if rsp == nil {
             continue
         }
-        glog.Info(RECV_LOG_PREFIX, "%v: %v\n", rsp, rsp.intf)
+        glog.Info("Receving on intf: ", intf.name, " goroutine ID ", getGID())
+        glog.Infof("%v: %v\n", rsp, rsp.intf)
         // Depending on what type of hello it is, respond
         // Respond to this hello packet with a IS-Neighbor TLV
         // If we receive a hello with no neighbor tlv, we copy
@@ -86,9 +112,9 @@ func hello_recv(intf *Intf) {
         // then mark the adjacency on that interface as INITIALIZING
         // If we receive a hello with our own mac in the neighbor tlv
         // we mark the adjacency as UP
-        glog.Infof("Got hello from %v\n", rsp.lan_hello_pdu.source_system_id)
+        glog.Infof("Got hello from %v\n", rsp.lan_hello_pdu.LanHelloHeader.SourceSystemId)
         // even if our adjacency is up, we need to respond to other folks
-        if rsp.lan_hello_pdu.first_tlv == nil {
+        if rsp.lan_hello_pdu.FirstTlv == nil {
             // No TLVs yet in this hello packet so we need to add in the IS neighbors tlv
             // TLV type 6
             // After getting this --> adjacency is in the initializing state
@@ -103,14 +129,15 @@ func hello_recv(intf *Intf) {
             }
             // Send a hello back out the interface we got the response on
             // But with the neighbor tlv
-            send_hello(rsp.intf, cfg.sid, &neighbors_tlv)
+            sendHello(rsp.intf, cfg.sid, &neighbors_tlv)
         } else {
             // If we do have the neighbors tlv, check if it has our own mac in it
             // if it does then we know the adjacency is established
-            if bytes.Equal(rsp.lan_hello_pdu.first_tlv.tlv_value, get_mac(rsp.intf.name)) {
+            if bytes.Equal(rsp.lan_hello_pdu.FirstTlv.tlv_value, getMac(rsp.intf.name)) {
                 rsp.intf.adj.state = "UP"
-                rsp.intf.adj.neighbor_system_id = hex.Dump(rsp.lan_hello_pdu.source_system_id[:])
-                glog.Infof("Adjacency up between %v and %v on intf %v", cfg.sid, rsp.intf.adj.neighbor_system_id, intf.name)
+                rsp.intf.adj.neighbor_system_id = make([]byte, 6)
+                copy(rsp.intf.adj.neighbor_system_id, rsp.lan_hello_pdu.LanHelloHeader.SourceSystemId[:])
+                glog.Infof("Adjacency up between %v and %v on intf %v", cfg.sid, system_id_to_str(rsp.intf.adj.neighbor_system_id), intf.name)
             }
         }
     }
@@ -134,16 +161,18 @@ func (s *server) ConfigureSystemID(ctx context.Context, in *pb.SystemIDRequest) 
 
 func (s *server) GetState(ctx context.Context, in *pb.StateRequest) (*pb.StateReply, error) {
     glog.Info("Got state request, dumping state", cfg)
-    interfaces_string := "" // TODO: optimize
-    for _, i := range cfg.interfaces {
-        if i.adj.state != "UP" {
-            interfaces_string += i.prefix.String() + " " + i.mask.String() + ", adjacency " + i.adj.state
-        } else {
-            interfaces_string += i.prefix.String() + " " + i.mask.String() + ", adjacency " + i.adj.state + " with " + i.adj.neighbor_system_id
-        }
-    }
     var reply pb.StateReply
-    reply.Intf = interfaces_string
+    reply.Intf = make([]string, len(cfg.interfaces))
+    for i, intf:= range cfg.interfaces {
+        interfaces_string := ""
+        if intf.adj.state != "UP" {
+            interfaces_string += intf.prefix.String() + " " + intf.mask.String() + ", adjacency " + intf.adj.state
+        } else {
+            interfaces_string += intf.prefix.String() + " " + intf.mask.String() + ", adjacency " + intf.adj.state + " with " + system_id_to_str(intf.adj.neighbor_system_id)
+        }
+        fmt.Println(reflect.TypeOf(reply.Intf))
+        reply.Intf[i] = interfaces_string
+    }
     return &reply, nil
 }
 
@@ -232,7 +261,11 @@ func main() {
     // Determine the interfaces available on the container
     // and add that to the configuration
 	initInterfaces()
+    ethernetInit()
 
+    for _, intf := range cfg.interfaces {
+        ethernetIntfInit(intf.name) // Creates send/recv raw sockets
+    }
 	// Start a couple go routines to communicate with other nodes
 	// to establish adjacencies. Each go routine can run
     // totally in parallel to establish adjacencies on each
@@ -245,6 +278,13 @@ func main() {
     for _, intf := range cfg.interfaces {
         go hello_recv(intf)
     }
+    // Start the update process go routine which floods LSPs to all neighbors
+    // and receives LSPs from neighbors
+    // One update goroutine per interface
+//     wg.Add(1)
+//     for _, intf := range cfg.interfaces {
+//         go update_input(intf)
+//     }
     // Start the gRPC server for accepting configuration (CLI commands)
     wg.Add(1)
     go start_grpc()

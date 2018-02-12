@@ -19,8 +19,7 @@ message StateRequest {
 }
 
 message StateReply {
-    string adj = 1;
-    string intf = 2;
+    repeated string intf = 1;
 }
 
 // The request message containing the system id to use
