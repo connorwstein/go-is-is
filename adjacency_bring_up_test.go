@@ -14,11 +14,12 @@ import (
     "time"
     "golang.org/x/net/context"
     "google.golang.org/grpc"
-    pb "../config"
+    pb "./config"
     "strings"
+    "testing"
 )
 
-func configure_sid(host string, port string, sid string) {
+func ConfigureSid(host string, port string, sid string) {
     target := [2]string{host, port}
     conn, err := grpc.Dial(strings.Join(target[:], ":"), grpc.WithInsecure())
     if err != nil {
@@ -34,7 +35,7 @@ func configure_sid(host string, port string, sid string) {
     log.Printf("SID configure result: %s", r.Message)
 }
 
-func get_state(host string, port string) {
+func GetState(host string, port string) *pb.StateReply {
     // TODO: reuse this connection
     target := [2]string{host, port}
     conn, err := grpc.Dial(strings.Join(target[:], ":"), grpc.WithInsecure())
@@ -50,20 +51,36 @@ func get_state(host string, port string) {
         log.Fatalf("Unable to get state: %v", err)
     }
     log.Printf("State response %s", r)
+    return r
 }
 
-func main() {
+func TestAdjBringUp(t *testing.T) {
     // Configure SIDs of the two nodes
-    node_ip_addresses := os.Args[1:]
-    fmt.Println(node_ip_addresses)
-    for k := 0; k < len(node_ip_addresses); k++ {
-        configure_sid(node_ip_addresses[k], "50051", fmt.Sprintf("1111.1111.111%d", k + 1))
+    nodeIpAddresses := []string{os.Getenv("node1"), os.Getenv("node2"), os.Getenv("node3")}
+    fmt.Println(nodeIpAddresses)
+    for k := 0; k < len(nodeIpAddresses); k++ {
+        ConfigureSid(nodeIpAddresses[k], "50051", fmt.Sprintf("1111.1111.111%d", k + 1))
     }
     // Poll for adjacency establishment
-    for {
-        for k := 0; k < len(node_ip_addresses); k++ {
-             get_state(node_ip_addresses[k], "50051")
+    adjCount := make(map[int]int) 
+    maxPolls := 10
+    currPoll := 0
+    for currPoll < maxPolls {
+        for k := 0; k < len(nodeIpAddresses); k++ {
+            intfs := GetState(nodeIpAddresses[k], "50051").Intf
+            numAdjUp := 0  
+            for _, intf := range intfs{
+                if strings.Contains(intf, "UP") {
+                    numAdjUp += 1
+                }
+            }
+            adjCount[k] = numAdjUp
         }
-        time.Sleep(10000 * time.Millisecond)
+        if adjCount[0] == 1 && adjCount[1] == 2 && adjCount[2] == 1 {
+            // All desired adjacencies are up
+            break
+        }
+        currPoll += 1
+        time.Sleep(2000 * time.Millisecond)
    }
 }

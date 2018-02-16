@@ -1,5 +1,6 @@
 Project
-- Implement IS-IS between using containers to represent IS-IS nodes
+- Use containers to represent IS-IS nodes and implement the IS-IS protocol
+- Examine performance with many goroutines handling communication per interface
 - Send IS-IS packets inside raw ethernet frames between the containers
 - Send configuration in via gRPC
 - Docker-compose to bring up the topology
@@ -73,6 +74,3 @@ TODO:
 - Crypto auth
 - Add checksums
 - Support hostname
-
-
-
