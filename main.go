@@ -2,8 +2,9 @@ package main
 
 import (
     "flag"
+    "strings"
     "fmt"
-    "time"
+//     "time"
     "bytes"
     "os"
     "os/signal"
@@ -23,14 +24,14 @@ import (
 )
 
 var wg sync.WaitGroup
-var l1_lan_hello_dst []byte
+var l1_multicast []byte
 var cfg Config
 
 const (
     GRPC_CFG_SERVER_PORT = ":50051"
     RECV_LOG_PREFIX = "RECV:"
     SEND_LOG_PREFIX = "SEND:"
-    HELLO_INTERVAL = 4000 // Milliseconds in between hello udpates
+    CHAN_BUF_SIZE = 100
 )
 
 type Config struct {
@@ -46,7 +47,6 @@ type Intf struct {
 	name string
 	prefix net.IP
 	mask net.IPMask
-    listening bool
 }
 
 type Adjacency struct {
@@ -69,6 +69,15 @@ func system_id_to_str(system_id []byte) string {
     return result
 }
 
+func system_id_to_bytes(sid string) [6]byte {
+    sid = strings.Replace(sid, ".", "", 6)
+    var sidBytes []byte = make([]byte, 6, 6)
+    sidBytes, _ = hex.DecodeString(sid)
+    var fixed [6]byte
+    copy(fixed[:], sidBytes)
+    return fixed
+}
+
 func getGID() uint64 {
     b := make([]byte, 64)
     b = b[:runtime.Stack(b, false)]
@@ -78,70 +87,6 @@ func getGID() uint64 {
     return n
 }
 
-func hello_send(intf *Intf) {
-    // Send hellos every HELLO_INTERVAL after a system ID has been configured
-	// on the specified interface
-    for {
-        if cfg.sid != "" {
-            glog.Infof("Adjacency state on %v: %v goroutine ID %d", intf.name, intf.adj.state, getGID())
-            if intf.adj.state != "UP" {
-                sendHello(intf, cfg.sid, nil)
-            }
-        }
-        time.Sleep(HELLO_INTERVAL * time.Millisecond)
-    }
-}
-
-func hello_recv(intf *Intf, helloChan chan [READ_BUF_SIZE]byte ) {
-    // Forever receiving hellos on the passed interface
-    // Updating the status of the interface as an adjacency is
-    // established
-    for {
-        rsp := recvHello(intf, helloChan)
-        // Can get a nil response for ethernet frames received
-        // which are not destined for the IS-IS hello multicast address
-        if rsp == nil {
-            continue
-        }
-        glog.Info("Receving on intf: ", intf.name, " goroutine ID ", getGID())
-        glog.Infof("%v: %v\n", rsp, rsp.intf)
-        // Depending on what type of hello it is, respond
-        // Respond to this hello packet with a IS-Neighbor TLV
-        // If we receive a hello with no neighbor tlv, we copy
-        // the mac of the sender into the neighbor tlv and send it back out
-        // then mark the adjacency on that interface as INITIALIZING
-        // If we receive a hello with our own mac in the neighbor tlv
-        // we mark the adjacency as UP
-        glog.Infof("Got hello from %v\n", rsp.lan_hello_pdu.LanHelloHeader.SourceSystemId)
-        // even if our adjacency is up, we need to respond to other folks
-        if rsp.lan_hello_pdu.FirstTlv == nil {
-            // No TLVs yet in this hello packet so we need to add in the IS neighbors tlv
-            // TLV type 6
-            // After getting this --> adjacency is in the initializing state
-            var neighbors_tlv IsisTLV
-            neighbors_tlv.next_tlv = nil
-            neighbors_tlv.tlv_type = 6
-            neighbors_tlv.tlv_length = 6 // Just one other mac for now
-            neighbors_tlv.tlv_value = rsp.source_mac // []byte of the senders mac address
-            if rsp.intf.adj.state != "UP" {
-                glog.Infof("Initializing adjacency on intf %v", intf.name)
-                rsp.intf.adj.state = "INIT"
-            }
-            // Send a hello back out the interface we got the response on
-            // But with the neighbor tlv
-            sendHello(rsp.intf, cfg.sid, &neighbors_tlv)
-        } else {
-            // If we do have the neighbors tlv, check if it has our own mac in it
-            // if it does then we know the adjacency is established
-            if bytes.Equal(rsp.lan_hello_pdu.FirstTlv.tlv_value, getMac(rsp.intf.name)) {
-                rsp.intf.adj.state = "UP"
-                rsp.intf.adj.neighbor_system_id = make([]byte, 6)
-                copy(rsp.intf.adj.neighbor_system_id, rsp.lan_hello_pdu.LanHelloHeader.SourceSystemId[:])
-                glog.Infof("Adjacency up between %v and %v on intf %v", cfg.sid, system_id_to_str(rsp.intf.adj.neighbor_system_id), intf.name)
-            }
-        }
-    }
-}
 
 func cleanup() {
     fmt.Println("cleanup")
@@ -240,13 +185,12 @@ func initInterfaces() {
     }
 }
 
-
 func main() {
     flag.Parse()
     glog.Info("Booting IS-IS node...")
 
     // This is a special multicast mac address
-    l1_lan_hello_dst = []byte{0x01, 0x80, 0xc2, 0x00, 0x00, 0x14}
+    l1_multicast = []byte{0x01, 0x80, 0xc2, 0x00, 0x00, 0x14}
     cfg.sid = ""
 
     // Exit go routine
@@ -272,32 +216,23 @@ func main() {
     // interface
     // Each goroutine blocks on the hello channel waiting for a hello pdu
     // from the recvPdus goroutine
-    var helloChans []chan [READ_BUF_SIZE]byte
+    wg.Add(1) // Just need one of these because none of the goroutines should exit
+    var helloChans, updateChans []chan [READ_BUF_SIZE]byte
+    var sendChans []chan []byte
     for i := 0; i < len(cfg.interfaces); i++ {
-        helloChans = append(helloChans, make(chan [READ_BUF_SIZE]byte))
+        helloChans = append(helloChans, make(chan [READ_BUF_SIZE]byte, CHAN_BUF_SIZE))
+        updateChans = append(updateChans, make(chan [READ_BUF_SIZE]byte, CHAN_BUF_SIZE))
+        sendChans = append(sendChans, make(chan []byte, CHAN_BUF_SIZE))
     }
-    wg.Add(1)
-    for _, intf := range cfg.interfaces {
-        go hello_send(intf)
-    }
-    wg.Add(1)
     for i, intf := range cfg.interfaces {
-        go hello_recv(intf, helloChans[i])
+        go isisHelloSend(intf, sendChans[i])
+        go isisHelloRecv(intf, helloChans[i], sendChans[i])
+        go recvPdus(intf.name, helloChans[i], updateChans[i])
+        go sendPdus(intf.name, sendChans[i])
+        go isisUpdate(intf, sendChans[i])
+        go isisUpdateInput(intf, updateChans[i], sendChans[i])
     }
-    // TODO: one channel per PDU type
-    wg.Add(1)
-    for i, intf := range cfg.interfaces {
-        go recvPdus(intf.name, helloChans[i])
-    }
-    // Start the update process go routine which floods LSPs to all neighbors
-    // and receives LSPs from neighbors
-    // One update goroutine per interface
-//     wg.Add(1)
-//     for _, intf := range cfg.interfaces {
-//         go update_input(intf)
-//     }
     // Start the gRPC server for accepting configuration (CLI commands)
-    wg.Add(1)
     go start_grpc()
     wg.Wait()
 }

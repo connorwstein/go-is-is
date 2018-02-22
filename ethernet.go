@@ -197,7 +197,7 @@ func recvFrame(ifname string) [READ_BUF_SIZE]byte {
     }
 }
 
-func recvPdus(ifname string, hello chan [READ_BUF_SIZE]byte) {
+func recvPdus(ifname string, hello chan [READ_BUF_SIZE]byte, update chan [READ_BUF_SIZE]byte) {
     // Continuously read from the raw socks associated with the specified
     // interface, putting the packets on the appropriate channels
     // for the other goroutines to process 
@@ -209,8 +209,21 @@ func recvPdus(ifname string, hello chan [READ_BUF_SIZE]byte) {
         // TODO: basic checks like length, checksum, auth
         // Check the common IS-IS header for the pdu type
         // This receive frame will have everything including the ethernet frame
-        hello <- buf  
+        // 14 bytes ethernet header, then its the 5th byte after that in the common header
+        pduType := buf[14+4]
+        if pduType == 0x0F {
+            hello <- buf  
+        } else if pduType == 0x12 {
+            glog.Info("Received an LSP!")
+            update <- buf
+        }
     }
 }
 
+func sendPdus(ifname string, send chan []byte) {
+    // Continuously sendPdus 
+    for {
+        sendFrame(<-send, ifname)
+    }
+}
 

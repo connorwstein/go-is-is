@@ -3,10 +3,11 @@ package main
 
 import (
 //     "fmt"
+    "time"
     "bytes"
     "encoding/binary"
     "encoding/hex"
-    "strings"
+//     "strings"
     "unsafe"
     "github.com/golang/glog"
 )
@@ -18,6 +19,7 @@ const (
     L1_LAN_IIH_PDU_TYPE = 0x0F
     VERSION = 0x01
     MAX_AREA_ADDRESSES_DEFAULT = 0x00 // 0 means 3 addresses are supported
+    HELLO_INTERVAL = 4000 // Milliseconds in between hello udpates, TODO: Should be configurable
 )
 
 type IsisLanHelloHeader struct {
@@ -126,23 +128,17 @@ func deserializeIsisHelloPdu(raw_bytes []byte) *IsisLanHelloPDU {
     return &hello
 }
 
-func sendHello(intf *Intf, sid string, neighbors_tlv *IsisTLV) {
+func sendHello(intf *Intf, sid string, neighbors_tlv *IsisTLV, sendChan chan []byte) {
     // May need to send a hello with a neighbor tlv
     // Convert the sid string to an array of 6 bytes
-    sid = strings.Replace(sid, ".", "", 6)
-    var mybytes []byte = make([]byte, 6, 6)
-    mybytes, _ = hex.DecodeString(sid)
-    var fixed [6]byte
-    copy(fixed[:], mybytes)
-
-    hello_l1_lan := buildL1HelloPdu(fixed)
+    hello_l1_lan := buildL1HelloPdu(system_id_to_bytes(sid))
     if neighbors_tlv != nil {
         hello_l1_lan.FirstTlv = neighbors_tlv
     }
     glog.Info("Sending hello with tlv:", hello_l1_lan.FirstTlv)
-    sendFrame(buildEthernetFrame(l1_lan_hello_dst,
+    sendChan <- buildEthernetFrame(l1_multicast,
                                  getMac(intf.name),
-                                 serializeIsisHelloPdu(hello_l1_lan)), intf.name)
+                                 serializeIsisHelloPdu(hello_l1_lan))
 }
 
 func recvHello(intf *Intf, helloChan chan [READ_BUF_SIZE]byte) *HelloResponse {
@@ -156,7 +152,7 @@ func recvHello(intf *Intf, helloChan chan [READ_BUF_SIZE]byte) *HelloResponse {
     hello := <- helloChan
 
     // Drop the frame unless it is the special multicast mac
-    if bytes.Equal(hello[0:6], l1_lan_hello_dst) {
+    if bytes.Equal(hello[0:6], l1_multicast) {
         glog.Infof("Got hello from %X:%X:%X:%X:%X:%X\n",
                    hello[6], hello[7], hello[8], hello[9], hello[10], hello[11])
         glog.Infof(hex.Dump(hello[:]))
@@ -169,4 +165,73 @@ func recvHello(intf *Intf, helloChan chan [READ_BUF_SIZE]byte) *HelloResponse {
         return &rsp
     }
     return nil
+}
+
+func isisHelloSend(intf *Intf, sendChan chan []byte) {
+    // Send hellos every HELLO_INTERVAL after a system ID has been configured
+	// on the specified interface
+    for {
+        if cfg.sid != "" {
+            glog.Infof("Adjacency state on %v: %v goroutine ID %d", intf.name, intf.adj.state, getGID())
+            if intf.adj.state != "UP" {
+                sendHello(intf, cfg.sid, nil, sendChan)
+            }
+        }
+        time.Sleep(HELLO_INTERVAL * time.Millisecond)
+    }
+}
+
+
+func isisHelloRecv(intf *Intf, helloChan chan [READ_BUF_SIZE]byte, sendChan chan []byte) {
+    // Forever receiving hellos on the passed interface
+    // Updating the status of the interface as an adjacency is
+    // established
+    for {
+        rsp := recvHello(intf, helloChan)
+        // Can get a nil response for ethernet frames received
+        // which are not destined for the IS-IS hello multicast address
+        if rsp == nil {
+            continue
+        }
+        glog.Info("Receving on intf: ", intf.name, " goroutine ID ", getGID())
+        glog.Infof("%v: %v\n", rsp, rsp.intf)
+        // Depending on what type of hello it is, respond
+        // Respond to this hello packet with a IS-Neighbor TLV
+        // If we receive a hello with no neighbor tlv, we copy
+        // the mac of the sender into the neighbor tlv and send it back out
+        // then mark the adjacency on that interface as INITIALIZING
+        // If we receive a hello with our own mac in the neighbor tlv
+        // we mark the adjacency as UP
+        glog.Infof("Got hello from %v\n", rsp.lan_hello_pdu.LanHelloHeader.SourceSystemId)
+        // even if our adjacency is up, we need to respond to other folks
+        if rsp.lan_hello_pdu.FirstTlv == nil {
+            // No TLVs yet in this hello packet so we need to add in the IS neighbors tlv
+            // TLV type 6
+            // After getting this --> adjacency is in the initializing state
+            var neighbors_tlv IsisTLV
+            neighbors_tlv.next_tlv = nil
+            neighbors_tlv.tlv_type = 6
+            neighbors_tlv.tlv_length = 6 // Just one other mac for now
+            neighbors_tlv.tlv_value = rsp.source_mac // []byte of the senders mac address
+            if rsp.intf.adj.state != "UP" {
+                glog.Infof("Initializing adjacency on intf %v", intf.name)
+                rsp.intf.adj.state = "INIT"
+            }
+            // Send a hello back out the interface we got the response on
+            // But with the neighbor tlv
+            sendHello(rsp.intf, cfg.sid, &neighbors_tlv, sendChan)
+        } else {
+            // If we do have the neighbors tlv, check if it has our own mac in it
+            // if it does then we know the adjacency is established
+            if bytes.Equal(rsp.lan_hello_pdu.FirstTlv.tlv_value, getMac(rsp.intf.name)) {
+                rsp.intf.adj.state = "UP"
+                rsp.intf.adj.neighbor_system_id = make([]byte, 6)
+                copy(rsp.intf.adj.neighbor_system_id, rsp.lan_hello_pdu.LanHelloHeader.SourceSystemId[:])
+                glog.Infof("Adjacency up between %v and %v on intf %v", cfg.sid, system_id_to_str(rsp.intf.adj.neighbor_system_id), intf.name)
+                // Signal that an adjacency change has occurred, so we should flood our lsps
+                // Set the SRM to true
+                GenerateLocalLsp(rsp.intf, true)
+            }
+        }
+    }
 }
