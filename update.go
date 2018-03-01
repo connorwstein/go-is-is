@@ -42,11 +42,15 @@ var lsps [100]*IsisLsp // TODO: use AVL tree
 
 func isisUpdateInput(intf *Intf, update chan [READ_BUF_SIZE]byte, send chan []byte) {
     // TODO: Receive update LSPs and flood them along
+    // Need to flood it along to every interface, except the one it came from
+    // The one it came from is the one we are listening on
     lsp := <- update
-    glog.Info("Received and LSP", lsp)
+    glog.Info("Received an LSP", lsp)
+    // We now need the AVL tree 
+    
 }
 
-func isisUpdate(intf *Intf, send chan []byte) {
+func isisUpdate(send chan []byte) {
     // Send out LSP updates via intf
     // Put them on the send channel
     // send_frame(payload, intf.name)

@@ -104,6 +104,61 @@ func AvlInsert(root *AvlNode, key int) *AvlNode {
     return root // Return the unchanged pointer
 }
 
+func AvlDelete(root *AvlNode, key int) *AvlNode {
+    if root == nil {
+        return root // Tree already empty
+    }
+    if key < root.key {
+        root.left = AvlDelete(root.left, key)
+    } else if key > root.key {
+        root.right = AvlDelete(root.right, key)
+    } else {
+        // Found the node to be deleted
+        // 3 cases to handle: no children, one child or two children
+        // Property of BSTs which is good to know: the predecessor is always the left subtree's right-most child
+        // and the successor is always the right subtree's left-most child
+        if root.left == nil && root.right == nil {
+            root = nil
+        } else if root.left == nil {
+            root = root.right
+        } else if root.right == nil {
+            root = root.left
+        } else {
+            // Two children case
+            var tmp *AvlNode = root.right
+            for tmp.left != nil {
+                tmp = tmp.left
+            }
+            root.key = tmp.key
+            root.right = AvlDelete(root.right, tmp.key) 
+        }
+    }
+    if root == nil {
+        return root
+    }
+    root.height = 1 + Max(GetHeight(root.left), GetHeight(root.right))
+    bf := GetBalanceFactor(root) 
+    if bf > 1 && GetBalanceFactor(root.left) >= 0 {
+        // Handle left-left rotation
+        return RotateRight(root)
+    } 
+    if bf > 1 && GetBalanceFactor(root.left) < 0 { 
+        // Handle left-right rotation
+        root.left = RotateLeft(root.left)
+        return RotateRight(root)
+    }
+    if bf < -1 && GetBalanceFactor(root.right) <= 0 { 
+        // Handle right-right rotation
+        return RotateLeft(root)
+    }
+    if bf < -1 && GetBalanceFactor(root.right) > 0 { 
+        // Handle right-left rotation
+        root.right = RotateRight(root.right)
+        return RotateLeft(root)
+    }
+    return root // Return the unchanged pointer
+}
+
 func AvlPrint(node *AvlNode){
     // Find a way to pretty print the nodes
     if node != nil {

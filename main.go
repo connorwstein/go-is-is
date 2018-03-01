@@ -229,7 +229,7 @@ func main() {
         go isisHelloRecv(intf, helloChans[i], sendChans[i])
         go recvPdus(intf.name, helloChans[i], updateChans[i])
         go sendPdus(intf.name, sendChans[i])
-        go isisUpdate(intf, sendChans[i])
+        go isisUpdate(sendChans[i])
         go isisUpdateInput(intf, updateChans[i], sendChans[i])
     }
     // Start the gRPC server for accepting configuration (CLI commands)

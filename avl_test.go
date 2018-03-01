@@ -2,17 +2,38 @@ package main
 
 import (
     "testing"
+    "fmt"
 )
 
 func TestAvlTreeInsert(t *testing.T) {
     var root *AvlNode
     root = &AvlNode{key: 10, left: nil, right: nil, height: 1}
-    root = AvlInsert(root, 20)
-    root = AvlInsert(root, 30)
-    root = AvlInsert(root, 40)
-    root = AvlInsert(root, 50)
+    for i := 0; i < 1000; i++ {
+        root = AvlInsert(root, i)
+    }
+    AvlPrint(root)
     // Check balanced 
-    if GetBalanceFactor(root) > 1 || GetBalanceFactor(root) < -1 {
+    b := GetBalanceFactor(root)
+    fmt.Println("Balance factor is:", b)
+    if b > 1 || b < -1 {
+        t.Fail()
+    }
+}
+
+func TestAvlTreeDelete(t *testing.T) {
+    var root *AvlNode
+    root = &AvlNode{key: 10, left: nil, right: nil, height: 1}
+    for i := 0; i < 1000; i++ {
+        root = AvlInsert(root, i)
+    }
+    // Should have roughly 0-499 in left subtree and 500-999 in right subtree
+    // Try deleting all nodes from 999-500 (worst case scenario)
+    for i := 999; i > 499; i-- {
+        root = AvlDelete(root, i)
+    }
+    b := GetBalanceFactor(root)
+    fmt.Println("Balance factor is:", b)
+    if b > 1 || b < -1 {
         t.Fail()
     }
 }
