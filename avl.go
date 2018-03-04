@@ -5,9 +5,10 @@ import (
 )
 
 type AvlNode struct {
-	key int
+	key uint64
 	left *AvlNode 
 	right *AvlNode
+    data interface{}
     height int
 }
 
@@ -65,15 +66,15 @@ func RotateLeft(node *AvlNode) *AvlNode {
     return y
 }
 
-func AvlInsert(root *AvlNode, key int) *AvlNode {
+func AvlInsert(root *AvlNode, key uint64, data interface{}) *AvlNode {
     // Standard binary search tree insert, but we also rebalance as we go
     if root == nil {
-        return &AvlNode{key: key, left: nil, right: nil, height: 1}
+        return &AvlNode{key: key, left: nil, right: nil, height: 1, data: data}
     }
     if key < root.key {
-        root.left = AvlInsert(root.left, key)
+        root.left = AvlInsert(root.left, key, data)
     } else {
-        root.right = AvlInsert(root.right, key)
+        root.right = AvlInsert(root.right, key, data)
     }
     // Update height of the ancestor node
     // Get the balance factor of this ancestor node (height left subtree - height right subtree)
@@ -104,7 +105,7 @@ func AvlInsert(root *AvlNode, key int) *AvlNode {
     return root // Return the unchanged pointer
 }
 
-func AvlDelete(root *AvlNode, key int) *AvlNode {
+func AvlDelete(root *AvlNode, key uint64) *AvlNode {
     if root == nil {
         return root // Tree already empty
     }
@@ -157,6 +158,37 @@ func AvlDelete(root *AvlNode, key int) *AvlNode {
         return RotateLeft(root)
     }
     return root // Return the unchanged pointer
+}
+
+func AvlSearch(root *AvlNode, key uint64) interface{} {
+    // Same as a normal binary search tree search
+    // If the key is greater than root.key, search right subtree, smaller - search left subtree
+    if root == nil {
+        // Unable to find key
+        return nil
+    }
+    if root.key == key {
+        return root.data
+    } else if root.key > key {
+        return AvlSearch(root.left, key)
+    } else {
+        return AvlSearch(root.right, key)
+    }
+}
+
+func AvlUpdate(root *AvlNode, key uint64, newData interface {}) {
+    // Find the key, replace the data
+    if root == nil {
+        // Unable to find key
+        return
+    }
+    if root.key == key {
+        root.data = newData
+    } else if root.key > key {
+        AvlUpdate(root.left, key, newData)
+    } else {
+        AvlUpdate(root.right, key, newData)
+    }
 }
 
 func AvlPrint(node *AvlNode){

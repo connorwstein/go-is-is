@@ -78,7 +78,6 @@ func buildL1HelloPdu(src_system_id [6]byte) *IsisLanHelloPDU {
     return &isis_l1_lan_hello // Golangs pointer analysis will allocate this on the heap
 }
 
-
 func serializeIsisHelloPdu(pdu *IsisLanHelloPDU) []byte {
     // Used as the payload of an ethernet frame
     var buf bytes.Buffer
@@ -181,7 +180,6 @@ func isisHelloSend(intf *Intf, sendChan chan []byte) {
     }
 }
 
-
 func isisHelloRecv(intf *Intf, helloChan chan [READ_BUF_SIZE]byte, sendChan chan []byte) {
     // Forever receiving hellos on the passed interface
     // Updating the status of the interface as an adjacency is
@@ -228,9 +226,12 @@ func isisHelloRecv(intf *Intf, helloChan chan [READ_BUF_SIZE]byte, sendChan chan
                 rsp.intf.adj.neighbor_system_id = make([]byte, 6)
                 copy(rsp.intf.adj.neighbor_system_id, rsp.lan_hello_pdu.LanHelloHeader.SourceSystemId[:])
                 glog.Infof("Adjacency up between %v and %v on intf %v", cfg.sid, system_id_to_str(rsp.intf.adj.neighbor_system_id), intf.name)
-                // Signal that an adjacency change has occurred, so we should flood our lsps
-                // Set the SRM to true
-                GenerateLocalLsp(rsp.intf, true)
+                // Signal that an adjacency change has occurred, so we should regenerate our lsp
+                // and flood
+//                 GenerateLocalLsp(rsp.intf, true)
+                // Optimization might be to use this adjacency information to only update that part of the 
+                // LSP, rather than rebuilding the whole thing from the adjacency database
+                GenerateLocalLsp()
             }
         }
     }

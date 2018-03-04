@@ -47,6 +47,15 @@ type Intf struct {
 	name string
 	prefix net.IP
 	mask net.IPMask
+    // Each interface has an SRM and SSN flag per LSP
+    lspFloodStates []*LspFloodState
+}
+
+type LspFloodState struct {
+    LspIDKey uint64
+    LspID [8]byte
+    SRM bool
+    SSN bool
 }
 
 type Adjacency struct {
@@ -172,6 +181,10 @@ func initInterfaces() {
                     adj.state = "NEW"
                     new_intf.adj = &adj
                     cfg.interfaces[index] = &new_intf
+                    
+                    // Initialize the flood states slice on that interface
+                    // Initially an empty slice, will grow as lsps are learned/created
+                    cfg.interfaces[index].lspFloodStates = make([]*LspFloodState, 0)
                     index++
                 } else {
                     // TODO: ipv6 support
@@ -180,7 +193,6 @@ func initInterfaces() {
 			default:
 				glog.Errorf("Not an ip address %+v\n", v)
             }
-
         }
     }
 }
@@ -225,12 +237,21 @@ func main() {
         sendChans = append(sendChans, make(chan []byte, CHAN_BUF_SIZE))
     }
     for i, intf := range cfg.interfaces {
+        // Periodically send hellos on each interface
+        // 3-way handshake occurs in parallel on each interface
         go isisHelloSend(intf, sendChans[i])
         go isisHelloRecv(intf, helloChans[i], sendChans[i])
+        // Each interface has a goroutine for sending and receiving PDUs
+        // the recv PDU goroutine will forward the PDU to either the hello or update 
+        // chan for that interface
         go recvPdus(intf.name, helloChans[i], updateChans[i])
         go sendPdus(intf.name, sendChans[i])
-        go isisUpdate(sendChans[i])
-        go isisUpdateInput(intf, updateChans[i], sendChans[i])
+
+        // Periodically check for SRMs on each interface
+        go isisUpdate(intf, sendChans[i])
+        // The updateInput goroutine is responsible for setting the SRM flag if required to trigger
+        // the flooding 
+        go isisUpdateInput(intf, updateChans[i])
     }
     // Start the gRPC server for accepting configuration (CLI commands)
     go start_grpc()
