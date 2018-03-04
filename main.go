@@ -5,11 +5,11 @@ import (
     "strings"
     "fmt"
 //     "time"
+    "sync"
     "bytes"
     "os"
     "os/signal"
     "syscall"
-    "sync"
     "encoding/hex"
 //     "log"
     "net"
@@ -25,7 +25,7 @@ import (
 
 var wg sync.WaitGroup
 var l1_multicast []byte
-var cfg Config
+var cfg *Config
 
 const (
     GRPC_CFG_SERVER_PORT = ":50051"
@@ -35,6 +35,7 @@ const (
 )
 
 type Config struct {
+    lock sync.Mutex
     sid string // Format is 6 bytes in a hex encoded string, with a '.' between bytes 2-3 and 4-5
     // Keep adjacencies and interfaces separate in case we want to do multiple
     // IS-IS levels, in which case there would be a level-1 and level-2 adjacency
@@ -48,7 +49,9 @@ type Intf struct {
 	prefix net.IP
 	mask net.IPMask
     // Each interface has an SRM and SSN flag per LSP
-    lspFloodStates []*LspFloodState
+    // Map where the keys are the LspIDs
+    lock sync.Mutex
+    lspFloodStates map[uint64]*LspFloodState
 }
 
 type LspFloodState struct {
@@ -104,8 +107,10 @@ func cleanup() {
 type server struct{}
 
 func (s *server) ConfigureSystemID(ctx context.Context, in *pb.SystemIDRequest) (*pb.SystemIDReply, error) {
+    cfg.lock.Lock()
     cfg.sid = in.Sid
     glog.Info("Got SID request, setting SID to " + cfg.sid)
+    cfg.lock.Unlock()
     // Returning a pointer to the system ID reply struct with a message acknowledging that it was
     // successfully configured.
     // Note that even through the proto has a the field defined with lowercase, it is converted
@@ -114,10 +119,13 @@ func (s *server) ConfigureSystemID(ctx context.Context, in *pb.SystemIDRequest) 
 }
 
 func (s *server) GetState(ctx context.Context, in *pb.StateRequest) (*pb.StateReply, error) {
+    cfg.lock.Lock()
     glog.Info("Got state request, dumping state", cfg)
     var reply pb.StateReply
     reply.Intf = make([]string, len(cfg.interfaces))
     for i, intf:= range cfg.interfaces {
+        glog.Infof("Locking interface %s", intf.name)
+        intf.lock.Lock()
         interfaces_string := ""
         if intf.adj.state != "UP" {
             interfaces_string += intf.prefix.String() + " " + intf.mask.String() + ", adjacency " + intf.adj.state
@@ -126,7 +134,10 @@ func (s *server) GetState(ctx context.Context, in *pb.StateRequest) (*pb.StateRe
         }
         fmt.Println(reflect.TypeOf(reply.Intf))
         reply.Intf[i] = interfaces_string
+        glog.Infof("Unlocking interface %s", intf.name)
+        intf.lock.Unlock()
     }
+    cfg.lock.Unlock()
     return &reply, nil
 }
 
@@ -177,6 +188,7 @@ func initInterfaces() {
                     new_intf.name = i.Name
                     new_intf.prefix = v.IP
                     new_intf.mask = v.Mask
+                    new_intf.lock = sync.Mutex{}
                     var adj Adjacency
                     adj.state = "NEW"
                     new_intf.adj = &adj
@@ -184,7 +196,7 @@ func initInterfaces() {
                     
                     // Initialize the flood states slice on that interface
                     // Initially an empty slice, will grow as lsps are learned/created
-                    cfg.interfaces[index].lspFloodStates = make([]*LspFloodState, 0)
+                    cfg.interfaces[index].lspFloodStates = make(map[uint64]*LspFloodState)
                     index++
                 } else {
                     // TODO: ipv6 support
@@ -203,7 +215,7 @@ func main() {
 
     // This is a special multicast mac address
     l1_multicast = []byte{0x01, 0x80, 0xc2, 0x00, 0x00, 0x14}
-    cfg.sid = ""
+    cfg = &Config{lock: sync.Mutex{}, sid: ""}
 
     // Exit go routine
     c := make(chan os.Signal, 2)
@@ -218,6 +230,7 @@ func main() {
     // and add that to the configuration
 	initInterfaces()
     ethernetInit()
+    LspDBInit()
 
     for _, intf := range cfg.interfaces {
         ethernetIntfInit(intf.name) // Creates send/recv raw sockets
@@ -237,21 +250,24 @@ func main() {
         sendChans = append(sendChans, make(chan []byte, CHAN_BUF_SIZE))
     }
     for i, intf := range cfg.interfaces {
+        // The updateInput goroutine is responsible for setting the SRM flag if required to trigger
+        // the flooding 
+        go isisUpdateInput(intf, updateChans[i])
+        // Periodically check for SRMs on each interface
+        go isisUpdate(intf, sendChans[i])
+
         // Periodically send hellos on each interface
         // 3-way handshake occurs in parallel on each interface
         go isisHelloSend(intf, sendChans[i])
         go isisHelloRecv(intf, helloChans[i], sendChans[i])
+
         // Each interface has a goroutine for sending and receiving PDUs
         // the recv PDU goroutine will forward the PDU to either the hello or update 
         // chan for that interface
         go recvPdus(intf.name, helloChans[i], updateChans[i])
         go sendPdus(intf.name, sendChans[i])
 
-        // Periodically check for SRMs on each interface
-        go isisUpdate(intf, sendChans[i])
-        // The updateInput goroutine is responsible for setting the SRM flag if required to trigger
-        // the flooding 
-        go isisUpdateInput(intf, updateChans[i])
+
     }
     // Start the gRPC server for accepting configuration (CLI commands)
     go start_grpc()

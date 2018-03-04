@@ -10,6 +10,7 @@ import (
 //     "fmt"
     "encoding/binary"
     "bytes"
+    "sync"
     "github.com/golang/glog"
 )
 
@@ -40,63 +41,102 @@ type IsisLsp struct {
 }
 
 type IsisLspDB struct {
+    DBLock sync.Mutex
     Root *AvlNode 
     // May want to add more information here
 }
 
-var LspDB IsisLspDB
+var LspDB *IsisLspDB
 // var SRMLsps []uint64 // Just the keys of the LSPs which we need to send
 
+func LspDBInit() {
+    LspDB = &IsisLspDB{DBLock: sync.Mutex{}, Root: nil}
+}
 func isisUpdateInput(receiveIntf *Intf, update chan [READ_BUF_SIZE]byte) {
     // TODO: Receive update LSPs and flood them along
     // Need to flood it along to every interface, except the one it came from
     // The one it came from is the one we are listening on
     // This lsp is a raw buffer [READ_BUF_SIZE]byte, need to deserialize
-    lsp := <- update
-    receivedLsp := deserializeLsp(lsp[:])
-    // Check if we already have this LSP, if not, then insert it
-    // into our own DB an flood it along to all the other interfaces we have
-    // TODO: if we already have a copy and the sequence number is newer, overwrite.
-    // if we have a newer copy, send the newer copy back to the source 
-    tmp := AvlSearch(LspDB.Root, receivedLsp.Key)
-    if tmp == nil {
-        // Don't have this LSP
-        glog.Infof("Adding new lsp %s to DB", system_id_to_str(receivedLsp.LspID[:6]))
-        AvlInsert(LspDB.Root, receivedLsp.Key, receivedLsp)
-        // Add this new LSP to all interfaces floodStates, and set SRM to true for all of them EXCEPT this interface which we 
-        // received it from
-        for _, intf := range cfg.interfaces {
-            glog.Info("Receive intf %s send intf %s", receiveIntf.name, intf.name)
-            if receiveIntf.name == intf.name {
-                intf.lspFloodStates = append(intf.lspFloodStates, &LspFloodState{LspIDKey: receivedLsp.Key, LspID: receivedLsp.LspID, SRM: false, SSN: false})
-            } else {
-                glog.Infof("Flooding new lsp %s out interface: %s", system_id_to_str(receivedLsp.LspID[:6]), intf.name)
-                intf.lspFloodStates = append(intf.lspFloodStates, &LspFloodState{LspIDKey: receivedLsp.Key, LspID: receivedLsp.LspID, SRM: true, SSN: false})
+    for {
+        lsp := <- update
+        receivedLsp := deserializeLsp(lsp[:])
+        // Check if we already have this LSP, if not, then insert it
+        // into our own DB an flood it along to all the other interfaces we have
+        // TODO: if we already have a copy and the sequence number is newer, overwrite.
+        // if we have a newer copy, send the newer copy back to the source 
+        LspDB.DBLock.Lock()
+        tmp := AvlSearch(LspDB.Root, receivedLsp.Key)
+        if tmp == nil {
+            // Don't have this LSP
+            glog.Infof("Before LSP DB (%p):", LspDB.Root)
+            PrintLspDB(LspDB.Root)
+            glog.Infof("Adding new lsp %s (%v) to DB", system_id_to_str(receivedLsp.LspID[:6]), receivedLsp.Key)
+            LspDB.Root = AvlInsert(LspDB.Root, receivedLsp.Key, receivedLsp)
+            glog.Infof("After LSP DB (%p):", LspDB.Root)
+            PrintLspDB(LspDB.Root)
+            // Add this new LSP to all interfaces floodStates, and set SRM to true for all of them EXCEPT this interface which we 
+            // received it from
+            for _, intf := range cfg.interfaces {
+                glog.Infof("Receive intf %s send intf %s", receiveIntf.name, intf.name)
+                glog.Infof("Locking interface %s", intf.name)
+                intf.lock.Lock()
+                if receiveIntf.name == intf.name {
+                    // If it is already there, just set SRM to true
+                    if _, inMap := intf.lspFloodStates[receivedLsp.Key]; ! inMap {
+                        intf.lspFloodStates[receivedLsp.Key] = &LspFloodState{LspIDKey: receivedLsp.Key, LspID: receivedLsp.LspID, SRM: false, SSN: false}
+                    } else {
+                        intf.lspFloodStates[receivedLsp.Key].SRM = false 
+                    }
+                    //intf.lspFloodStates = append(intf.lspFloodStates, &LspFloodState{LspIDKey: receivedLsp.Key, LspID: receivedLsp.LspID, SRM: false, SSN: false})
+                } else {
+                    glog.Infof("Flooding new lsp %s out interface: %s", system_id_to_str(receivedLsp.LspID[:6]), intf.name)
+                    // If it is already there, just set SRM to true
+                    if _, inMap := intf.lspFloodStates[receivedLsp.Key]; ! inMap {
+                        intf.lspFloodStates[receivedLsp.Key] = &LspFloodState{LspIDKey: receivedLsp.Key, LspID: receivedLsp.LspID, SRM: true, SSN: false}
+                    } else {
+                        intf.lspFloodStates[receivedLsp.Key].SRM = true 
+                    }
+    //                 intf.lspFloodStates = append(intf.lspFloodStates, &LspFloodState{LspIDKey: receivedLsp.Key, LspID: receivedLsp.LspID, SRM: true, SSN: false})
+                }
+                glog.Infof("Unlocking interface %s", intf.name)
+                intf.lock.Unlock()
             }
         }
+        LspDB.DBLock.Unlock()
     }
 }
 
 func isisUpdate(intf *Intf, send chan []byte) {
     for {
+        glog.Infof("Locking interface %s", intf.name)
+        intf.lock.Lock()
+        glog.Info(intf.lspFloodStates)
         glog.Info("LSP DB:")
         PrintLspDB(LspDB.Root)
+        glog.Infof("Intf %s Flood States", intf.name)
+        PrintLspFloodStates(intf)
         // Check for SRM == true on this interface, if there
         // then use the key to get the full LSP, send it and clear the flag 
         for _, lspFloodState := range intf.lspFloodStates {
-            if lspFloodState.SRM {
+            // Need the adjacency to be UP as well
+            if lspFloodState.SRM && intf.adj.state == "UP"{
                 tmp := AvlSearch(LspDB.Root, lspFloodState.LspIDKey)
                 if tmp == nil {
-                    glog.Errorf("Unable to find %s in lsp db", system_id_to_str(lspFloodState.LspID[:6]))
+                    glog.Errorf("Unable to find %s (%v) in lsp db", system_id_to_str(lspFloodState.LspID[:6]), lspFloodState.LspIDKey)
+                    glog.Errorf("Lsp DB:")
+                    PrintLspDB(LspDB.Root)
                 } else {
                     lsp := tmp.(*IsisLsp)
                     // Send it out that particular interface
+                    glog.Infof("Flooding %s out %s", system_id_to_str(lspFloodState.LspID[:6]), intf.name)
                     send <- buildEthernetFrame(l1_multicast, getMac(intf.name), serializeLsp(lsp.CoreLsp))
                     // No ACK required for LAN interfaces
                     lspFloodState.SRM = false
                 }
             }
         }
+        glog.Infof("Unlocking interface %s", intf.name)
+        intf.lock.Unlock()
         time.Sleep(LSP_REFRESH * time.Millisecond)
     }
 }
@@ -155,14 +195,11 @@ func GenerateLocalLsp() {
                         LspHeader: lspHeader,
                         FirstTlv: nil}
     newLsp.CoreLsp = &core
-//     newLsp.Interface = intf
-//     newLsp.SRM = SRM
     newLsp.Key =  LspIDToKey(lspID)
+    LspDB.DBLock.Lock()
     LspDB.Root = AvlInsert(LspDB.Root, newLsp.Key, &newLsp)
-//     if SRM {
-//         SRMLsps = append(SRMLsps, newLsp.Key)
-//     }
     tmp := AvlSearch(LspDB.Root, newLsp.Key)
+    LspDB.DBLock.Unlock()
     if tmp == nil {
         glog.Infof("Failed to generate local LSP %s", system_id_to_str(newLsp.LspID[:6]))
     } else {
@@ -171,21 +208,33 @@ func GenerateLocalLsp() {
     }
     // Lsp has been created, need to flood it on all interfaces
     for _, intf := range cfg.interfaces {
-        // Add this LSP to the interfaces flood state and set SRM to true, I think this might have to be a dictionary
-        intf.lspFloodStates = append(intf.lspFloodStates, &LspFloodState{LspIDKey: newLsp.Key, LspID: newLsp.LspID, SRM: true, SSN: false})
+        glog.Infof("Waiting for lock on intf %s", intf.name)
+        intf.lock.Lock()
+        // Add this LSP to the interfaces flood state 
+        // If it is already there, just set SRM to true
+        if _, inMap := intf.lspFloodStates[newLsp.Key]; ! inMap {
+            intf.lspFloodStates[newLsp.Key] = &LspFloodState{LspIDKey: newLsp.Key, LspID: newLsp.LspID, SRM: true, SSN: false}
+        } else {
+            intf.lspFloodStates[newLsp.Key].SRM = true 
+        }
+        glog.Infof("Unlocking interface %s", intf.name)
+        intf.lock.Unlock()
     }
 }
 
 func PrintLspDB(root *AvlNode) {
     if root != nil {
         PrintLspDB(root.left)
-        if root.left == nil && root.right == nil {
-            // Leaf node, print it
-            if root.data != nil {
-                lsp := root.data.(*IsisLsp)
-                glog.Infof("%s", system_id_to_str(lsp.LspID[:6]));
-            }
+        if root.data != nil {
+            lsp := root.data.(*IsisLsp)
+            glog.Infof("%s -> %v", system_id_to_str(lsp.LspID[:6]), lsp);
         }
         PrintLspDB(root.right)
+    }
+}
+
+func PrintLspFloodStates(intf *Intf) {
+    for k, v := range intf.lspFloodStates {
+        glog.Infof("%s --> %v: %v", system_id_to_str(v.LspID[:6]), k, v)
     }
 }

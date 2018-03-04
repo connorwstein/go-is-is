@@ -69,9 +69,12 @@ func RotateLeft(node *AvlNode) *AvlNode {
 func AvlInsert(root *AvlNode, key uint64, data interface{}) *AvlNode {
     // Standard binary search tree insert, but we also rebalance as we go
     if root == nil {
+        // This is the local to insert
         return &AvlNode{key: key, left: nil, right: nil, height: 1, data: data}
     }
-    if key < root.key {
+    if key == root.key {
+        return root // Return unchanged pointer
+    } else if key < root.key {
         root.left = AvlInsert(root.left, key, data)
     } else {
         root.right = AvlInsert(root.right, key, data)

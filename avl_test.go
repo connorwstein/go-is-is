@@ -4,6 +4,14 @@ import (
     "testing"
     "fmt"
 )
+func TestAvlTreeInsertDup(t *testing.T) {
+    var root *AvlNode
+    root = &AvlNode{key: 10, left: nil, right: nil, height: 1, data: nil}
+    root = AvlInsert(root, 10, 10) 
+    root = AvlInsert(root, 10, 10) 
+    AvlPrint(root) 
+}
+
 func TestAvlTreeSearch(t *testing.T) {
     var root *AvlNode
     root = &AvlNode{key: 10, left: nil, right: nil, height: 1}

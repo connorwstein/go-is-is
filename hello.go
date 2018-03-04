@@ -6,7 +6,7 @@ import (
     "time"
     "bytes"
     "encoding/binary"
-    "encoding/hex"
+//     "encoding/hex"
 //     "strings"
     "unsafe"
     "github.com/golang/glog"
@@ -149,18 +149,17 @@ func recvHello(intf *Intf, helloChan chan [READ_BUF_SIZE]byte) *HelloResponse {
     
     // Blocks on the hello channel
     hello := <- helloChan
-
     // Drop the frame unless it is the special multicast mac
     if bytes.Equal(hello[0:6], l1_multicast) {
         glog.Infof("Got hello from %X:%X:%X:%X:%X:%X\n",
                    hello[6], hello[7], hello[8], hello[9], hello[10], hello[11])
-        glog.Infof(hex.Dump(hello[:]))
+//         glog.Infof(hex.Dump(hello[:]))
         // Need to extract the system id from the packet
         received_hello := deserializeIsisHelloPdu(hello[0:len(hello)])
         var rsp HelloResponse
         rsp.lan_hello_pdu = received_hello
         rsp.source_mac = hello[6:12]
-        rsp.intf = intf
+//         rsp.intf = intf
         return &rsp
     }
     return nil
@@ -170,12 +169,18 @@ func isisHelloSend(intf *Intf, sendChan chan []byte) {
     // Send hellos every HELLO_INTERVAL after a system ID has been configured
 	// on the specified interface
     for {
+        glog.Infof("Locking interface %s", intf.name)
+        intf.lock.Lock()
+        cfg.lock.Lock()
         if cfg.sid != "" {
             glog.Infof("Adjacency state on %v: %v goroutine ID %d", intf.name, intf.adj.state, getGID())
             if intf.adj.state != "UP" {
                 sendHello(intf, cfg.sid, nil, sendChan)
             }
         }
+        cfg.lock.Unlock()
+        glog.Infof("Unlocking interface %s", intf.name)
+        intf.lock.Unlock()
         time.Sleep(HELLO_INTERVAL * time.Millisecond)
     }
 }
@@ -185,14 +190,18 @@ func isisHelloRecv(intf *Intf, helloChan chan [READ_BUF_SIZE]byte, sendChan chan
     // Updating the status of the interface as an adjacency is
     // established
     for {
+        // Blocking call to read
         rsp := recvHello(intf, helloChan)
         // Can get a nil response for ethernet frames received
         // which are not destined for the IS-IS hello multicast address
         if rsp == nil {
             continue
         }
+        intf.lock.Lock()
         glog.Info("Receving on intf: ", intf.name, " goroutine ID ", getGID())
-        glog.Infof("%v: %v\n", rsp, rsp.intf)
+        intf.lock.Unlock()
+        // Usynchronized read ?
+//         glog.Infof("%v: %v\n", rsp, rsp.intf)
         // Depending on what type of hello it is, respond
         // Respond to this hello packet with a IS-Neighbor TLV
         // If we receive a hello with no neighbor tlv, we copy
@@ -211,27 +220,33 @@ func isisHelloRecv(intf *Intf, helloChan chan [READ_BUF_SIZE]byte, sendChan chan
             neighbors_tlv.tlv_type = 6
             neighbors_tlv.tlv_length = 6 // Just one other mac for now
             neighbors_tlv.tlv_value = rsp.source_mac // []byte of the senders mac address
-            if rsp.intf.adj.state != "UP" {
+            intf.lock.Lock()
+            if intf.adj.state != "UP" {
                 glog.Infof("Initializing adjacency on intf %v", intf.name)
-                rsp.intf.adj.state = "INIT"
+                intf.adj.state = "INIT"
             }
+            intf.lock.Unlock()
             // Send a hello back out the interface we got the response on
             // But with the neighbor tlv
-            sendHello(rsp.intf, cfg.sid, &neighbors_tlv, sendChan)
+            sendHello(intf, cfg.sid, &neighbors_tlv, sendChan)
         } else {
             // If we do have the neighbors tlv, check if it has our own mac in it
             // if it does then we know the adjacency is established
-            if bytes.Equal(rsp.lan_hello_pdu.FirstTlv.tlv_value, getMac(rsp.intf.name)) {
-                rsp.intf.adj.state = "UP"
-                rsp.intf.adj.neighbor_system_id = make([]byte, 6)
-                copy(rsp.intf.adj.neighbor_system_id, rsp.lan_hello_pdu.LanHelloHeader.SourceSystemId[:])
-                glog.Infof("Adjacency up between %v and %v on intf %v", cfg.sid, system_id_to_str(rsp.intf.adj.neighbor_system_id), intf.name)
+            intf.lock.Lock()
+            if bytes.Equal(rsp.lan_hello_pdu.FirstTlv.tlv_value, getMac(intf.name)) {
+                intf.adj.state = "UP"
+                intf.adj.neighbor_system_id = make([]byte, 6)
+                copy(intf.adj.neighbor_system_id, rsp.lan_hello_pdu.LanHelloHeader.SourceSystemId[:])
+                glog.Infof("Adjacency up between %v and %v on intf %v", cfg.sid, system_id_to_str(intf.adj.neighbor_system_id), intf.name)
                 // Signal that an adjacency change has occurred, so we should regenerate our lsp
                 // and flood
 //                 GenerateLocalLsp(rsp.intf, true)
                 // Optimization might be to use this adjacency information to only update that part of the 
                 // LSP, rather than rebuilding the whole thing from the adjacency database
+                intf.lock.Unlock()
                 GenerateLocalLsp()
+            } else {
+                intf.lock.Unlock()
             }
         }
     }

@@ -214,7 +214,7 @@ func recvPdus(ifname string, hello chan [READ_BUF_SIZE]byte, update chan [READ_B
         if pduType == 0x0F {
             hello <- buf  
         } else if pduType == 0x12 {
-            glog.Info("Received an LSP!")
+            glog.Infof("Received an LSP %s",  system_id_to_str(buf[14+7+5: 14+7+5+6]))
             update <- buf
         }
     }
