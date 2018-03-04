@@ -1,19 +1,21 @@
-Project
-- Use containers to represent IS-IS nodes and implement the IS-IS protocol
-- Examine performance with many goroutines handling communication per interface
-- Send IS-IS packets inside raw ethernet frames between the containers
-- Send configuration in via gRPC
-- Docker-compose to bring up the topology
-- Docker containers are connected initially via the docker bridge so all containers are reachable  i.e. one big LAN by default
-- Can use a bunch of custom defined networks and have nodes members of various networks to create a topology
-which will be learned dynamically via IS-IS, handling container failures etc. To start we'll use 3 nodes and 2 networks, where one node is an intermediate hop between the other two:
+This project is an implementation of a subset of the IS-IS protocol. There may be slight deviations from the actual RFC
+as it is more of an exploration of golang rather than anything like a piece of production software.
 
+Traditional implementations use only a handful of threads as each one eats up something on the order of a few MB of memory. 
+In C, having a thread per interface is out of the question because large routers can have thousands of interfaces which would
+mean GB of memory, but in golang it should be possible to have a goroutine per interface and not use a ton of memory. 
+
+The nodes are represented by docker containers and a topology can be brought up with docker-compose. Node configuration 
+and state queries are accepted through gRPC. Docker containers are placed in separate networks and then the topology is learned
+though IS-IS. The test topology uses 3 nodes and 2 networks:
+
+       net1         net2 
 node1 <----> node2 <----> node3
 
 Node 1 and 3 are members of two different networks and node 2 is a member of both with two virtual ethernet interfaces. The test client
-node which pushes the config in is a member of both networks so it can reach all nodes.
-
-- Docker-machine settings needed for this to work (without this the ethernet frames get dropped by the docker linux bridge) --> see config_docker_machine.sh
+node which pushes the config in is a member of both networks so it can reach all nodes. Since IS-IS frames are embedded
+directly in layer 2 packets with no layer 3 header, special settings are required for the linux kernel. See config_docker_machine.sh
+for details.
 
 USAGE:
 Topology bring up:
@@ -66,11 +68,9 @@ TODO:
     the one hop path.
 
 - Psuedonode support and DIS election process
-- Handle level hierarchy
 - Detect adjacency failures (interface flaps etc.)
 - Add adjacency formation jitter
 - Verification of PDU length
-- PtoP link support
 - Crypto auth
 - Add checksums
 - Support hostname
