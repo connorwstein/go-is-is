@@ -8,8 +8,10 @@ It is generated from these files:
 	config.proto
 
 It has these top-level messages:
-	StateRequest
-	StateReply
+	IntfRequest
+	IntfReply
+	LspRequest
+	LspReply
 	SystemIDRequest
 	SystemIDReply
 */
@@ -35,34 +37,70 @@ var _ = math.Inf
 // proto package needs to be updated.
 const _ = proto.ProtoPackageIsVersion2 // please upgrade the proto package
 
-type StateRequest struct {
-	ShRun string `protobuf:"bytes,1,opt,name=sh_run,json=shRun" json:"sh_run,omitempty"`
+type IntfRequest struct {
+	// Optionally specify the interface to be selected
+	// Empty string signifies a request for all interfaces
+	ShIntf string `protobuf:"bytes,1,opt,name=shIntf" json:"shIntf,omitempty"`
 }
 
-func (m *StateRequest) Reset()                    { *m = StateRequest{} }
-func (m *StateRequest) String() string            { return proto.CompactTextString(m) }
-func (*StateRequest) ProtoMessage()               {}
-func (*StateRequest) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{0} }
+func (m *IntfRequest) Reset()                    { *m = IntfRequest{} }
+func (m *IntfRequest) String() string            { return proto.CompactTextString(m) }
+func (*IntfRequest) ProtoMessage()               {}
+func (*IntfRequest) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{0} }
 
-func (m *StateRequest) GetShRun() string {
+func (m *IntfRequest) GetShIntf() string {
 	if m != nil {
-		return m.ShRun
+		return m.ShIntf
 	}
 	return ""
 }
 
-type StateReply struct {
+type IntfReply struct {
 	Intf []string `protobuf:"bytes,1,rep,name=intf" json:"intf,omitempty"`
 }
 
-func (m *StateReply) Reset()                    { *m = StateReply{} }
-func (m *StateReply) String() string            { return proto.CompactTextString(m) }
-func (*StateReply) ProtoMessage()               {}
-func (*StateReply) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{1} }
+func (m *IntfReply) Reset()                    { *m = IntfReply{} }
+func (m *IntfReply) String() string            { return proto.CompactTextString(m) }
+func (*IntfReply) ProtoMessage()               {}
+func (*IntfReply) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{1} }
 
-func (m *StateReply) GetIntf() []string {
+func (m *IntfReply) GetIntf() []string {
 	if m != nil {
 		return m.Intf
+	}
+	return nil
+}
+
+type LspRequest struct {
+	ShLsp string `protobuf:"bytes,1,opt,name=shLsp" json:"shLsp,omitempty"`
+}
+
+func (m *LspRequest) Reset()                    { *m = LspRequest{} }
+func (m *LspRequest) String() string            { return proto.CompactTextString(m) }
+func (*LspRequest) ProtoMessage()               {}
+func (*LspRequest) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{2} }
+
+func (m *LspRequest) GetShLsp() string {
+	if m != nil {
+		return m.ShLsp
+	}
+	return ""
+}
+
+type LspReply struct {
+	// Similar to interface requests, can specify a specific lsp
+	// or an empty string will return all of them
+	Lsp []string `protobuf:"bytes,1,rep,name=lsp" json:"lsp,omitempty"`
+}
+
+func (m *LspReply) Reset()                    { *m = LspReply{} }
+func (m *LspReply) String() string            { return proto.CompactTextString(m) }
+func (*LspReply) ProtoMessage()               {}
+func (*LspReply) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{3} }
+
+func (m *LspReply) GetLsp() []string {
+	if m != nil {
+		return m.Lsp
 	}
 	return nil
 }
@@ -75,7 +113,7 @@ type SystemIDRequest struct {
 func (m *SystemIDRequest) Reset()                    { *m = SystemIDRequest{} }
 func (m *SystemIDRequest) String() string            { return proto.CompactTextString(m) }
 func (*SystemIDRequest) ProtoMessage()               {}
-func (*SystemIDRequest) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{2} }
+func (*SystemIDRequest) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{4} }
 
 func (m *SystemIDRequest) GetSid() string {
 	if m != nil {
@@ -92,7 +130,7 @@ type SystemIDReply struct {
 func (m *SystemIDReply) Reset()                    { *m = SystemIDReply{} }
 func (m *SystemIDReply) String() string            { return proto.CompactTextString(m) }
 func (*SystemIDReply) ProtoMessage()               {}
-func (*SystemIDReply) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{3} }
+func (*SystemIDReply) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{5} }
 
 func (m *SystemIDReply) GetMessage() string {
 	if m != nil {
@@ -102,8 +140,10 @@ func (m *SystemIDReply) GetMessage() string {
 }
 
 func init() {
-	proto.RegisterType((*StateRequest)(nil), "config.StateRequest")
-	proto.RegisterType((*StateReply)(nil), "config.StateReply")
+	proto.RegisterType((*IntfRequest)(nil), "config.IntfRequest")
+	proto.RegisterType((*IntfReply)(nil), "config.IntfReply")
+	proto.RegisterType((*LspRequest)(nil), "config.LspRequest")
+	proto.RegisterType((*LspReply)(nil), "config.LspReply")
 	proto.RegisterType((*SystemIDRequest)(nil), "config.SystemIDRequest")
 	proto.RegisterType((*SystemIDReply)(nil), "config.SystemIDReply")
 }
@@ -184,7 +224,8 @@ var _Configure_serviceDesc = grpc.ServiceDesc{
 
 type StateClient interface {
 	// Could also support streaming updates out this system ?
-	GetState(ctx context.Context, in *StateRequest, opts ...grpc.CallOption) (*StateReply, error)
+	GetIntf(ctx context.Context, in *IntfRequest, opts ...grpc.CallOption) (*IntfReply, error)
+	GetLsp(ctx context.Context, in *LspRequest, opts ...grpc.CallOption) (*LspReply, error)
 }
 
 type stateClient struct {
@@ -195,9 +236,18 @@ func NewStateClient(cc *grpc.ClientConn) StateClient {
 	return &stateClient{cc}
 }
 
-func (c *stateClient) GetState(ctx context.Context, in *StateRequest, opts ...grpc.CallOption) (*StateReply, error) {
-	out := new(StateReply)
-	err := grpc.Invoke(ctx, "/config.State/GetState", in, out, c.cc, opts...)
+func (c *stateClient) GetIntf(ctx context.Context, in *IntfRequest, opts ...grpc.CallOption) (*IntfReply, error) {
+	out := new(IntfReply)
+	err := grpc.Invoke(ctx, "/config.State/GetIntf", in, out, c.cc, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateClient) GetLsp(ctx context.Context, in *LspRequest, opts ...grpc.CallOption) (*LspReply, error) {
+	out := new(LspReply)
+	err := grpc.Invoke(ctx, "/config.State/GetLsp", in, out, c.cc, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -208,27 +258,46 @@ func (c *stateClient) GetState(ctx context.Context, in *StateRequest, opts ...gr
 
 type StateServer interface {
 	// Could also support streaming updates out this system ?
-	GetState(context.Context, *StateRequest) (*StateReply, error)
+	GetIntf(context.Context, *IntfRequest) (*IntfReply, error)
+	GetLsp(context.Context, *LspRequest) (*LspReply, error)
 }
 
 func RegisterStateServer(s *grpc.Server, srv StateServer) {
 	s.RegisterService(&_State_serviceDesc, srv)
 }
 
-func _State_GetState_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(StateRequest)
+func _State_GetIntf_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(IntfRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(StateServer).GetState(ctx, in)
+		return srv.(StateServer).GetIntf(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/config.State/GetState",
+		FullMethod: "/config.State/GetIntf",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(StateServer).GetState(ctx, req.(*StateRequest))
+		return srv.(StateServer).GetIntf(ctx, req.(*IntfRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _State_GetLsp_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(LspRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateServer).GetLsp(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/config.State/GetLsp",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateServer).GetLsp(ctx, req.(*LspRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -238,8 +307,12 @@ var _State_serviceDesc = grpc.ServiceDesc{
 	HandlerType: (*StateServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "GetState",
-			Handler:    _State_GetState_Handler,
+			MethodName: "GetIntf",
+			Handler:    _State_GetIntf_Handler,
+		},
+		{
+			MethodName: "GetLsp",
+			Handler:    _State_GetLsp_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
@@ -249,19 +322,22 @@ var _State_serviceDesc = grpc.ServiceDesc{
 func init() { proto.RegisterFile("config.proto", fileDescriptor0) }
 
 var fileDescriptor0 = []byte{
-	// 219 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xe2, 0xe2, 0x49, 0xce, 0xcf, 0x4b,
-	0xcb, 0x4c, 0xd7, 0x2b, 0x28, 0xca, 0x2f, 0xc9, 0x17, 0x62, 0x83, 0xf0, 0x94, 0x54, 0xb9, 0x78,
-	0x82, 0x4b, 0x12, 0x4b, 0x52, 0x83, 0x52, 0x0b, 0x4b, 0x53, 0x8b, 0x4b, 0x84, 0x44, 0xb9, 0xd8,
-	0x8a, 0x33, 0xe2, 0x8b, 0x4a, 0xf3, 0x24, 0x18, 0x15, 0x18, 0x35, 0x38, 0x83, 0x58, 0x8b, 0x33,
-	0x82, 0x4a, 0xf3, 0x94, 0x14, 0xb8, 0xb8, 0xa0, 0xca, 0x0a, 0x72, 0x2a, 0x85, 0x84, 0xb8, 0x58,
-	0x32, 0xf3, 0x4a, 0xd2, 0x24, 0x18, 0x15, 0x98, 0x35, 0x38, 0x83, 0xc0, 0x6c, 0x25, 0x65, 0x2e,
-	0xfe, 0xe0, 0xca, 0xe2, 0x92, 0xd4, 0x5c, 0x4f, 0x17, 0x98, 0x59, 0x02, 0x5c, 0xcc, 0xc5, 0x99,
-	0x29, 0x50, 0x83, 0x40, 0x4c, 0x25, 0x4d, 0x2e, 0x5e, 0x84, 0x22, 0x90, 0x49, 0x12, 0x5c, 0xec,
-	0xb9, 0xa9, 0xc5, 0xc5, 0x89, 0xe9, 0xa9, 0x50, 0x65, 0x30, 0xae, 0x51, 0x10, 0x17, 0xa7, 0x33,
-	0xd8, 0x89, 0xa5, 0x45, 0xa9, 0x42, 0xae, 0x5c, 0x82, 0x70, 0x0e, 0xcc, 0x00, 0x21, 0x71, 0x3d,
-	0xa8, 0x8f, 0xd0, 0xec, 0x95, 0x12, 0xc5, 0x94, 0x28, 0xc8, 0xa9, 0x54, 0x62, 0x30, 0xb2, 0xe7,
-	0x62, 0x05, 0xfb, 0x42, 0xc8, 0x8c, 0x8b, 0xc3, 0x3d, 0xb5, 0x04, 0xc2, 0x16, 0x81, 0xab, 0x46,
-	0x0a, 0x07, 0x29, 0x21, 0x34, 0x51, 0xb0, 0x01, 0x49, 0x6c, 0xe0, 0xc0, 0x33, 0x06, 0x04, 0x00,
-	0x00, 0xff, 0xff, 0x89, 0x86, 0x17, 0x49, 0x4c, 0x01, 0x00, 0x00,
+	// 263 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x64, 0x91, 0x5f, 0x4f, 0xc2, 0x40,
+	0x10, 0xc4, 0x25, 0x95, 0x62, 0x47, 0x8d, 0x65, 0xfd, 0x47, 0x1a, 0x13, 0xcd, 0x19, 0x13, 0x7c,
+	0x21, 0x06, 0x3e, 0x82, 0x1a, 0x42, 0xd2, 0xa7, 0xf2, 0x09, 0x50, 0x0f, 0x68, 0x52, 0xda, 0x93,
+	0x3d, 0x1e, 0xfa, 0xed, 0xcd, 0x5d, 0xef, 0xc4, 0xca, 0xdb, 0xce, 0xce, 0xec, 0xaf, 0xe9, 0x1c,
+	0xce, 0x3e, 0xab, 0x72, 0x99, 0xaf, 0x46, 0x6a, 0x5b, 0xe9, 0x8a, 0xc2, 0x46, 0x89, 0x27, 0x9c,
+	0xce, 0x4a, 0xbd, 0xcc, 0xe4, 0xf7, 0x4e, 0xb2, 0xa6, 0x1b, 0x84, 0xbc, 0x36, 0x8b, 0x41, 0xe7,
+	0xa1, 0x33, 0x8c, 0x32, 0xa7, 0xc4, 0x3d, 0xa2, 0x26, 0xa6, 0x8a, 0x9a, 0x08, 0xc7, 0x79, 0x13,
+	0x09, 0x86, 0x51, 0x66, 0x67, 0x21, 0x80, 0x94, 0x95, 0xc7, 0x5c, 0xa1, 0xcb, 0xeb, 0x94, 0x95,
+	0xa3, 0x34, 0x42, 0xdc, 0xe1, 0xc4, 0x66, 0x0c, 0x23, 0x46, 0x50, 0x58, 0xdf, 0x20, 0xcc, 0x28,
+	0x1e, 0x71, 0x31, 0xaf, 0x59, 0xcb, 0xcd, 0xec, 0xcd, 0x63, 0x62, 0x04, 0x9c, 0x7f, 0x39, 0x88,
+	0x19, 0xc5, 0x33, 0xce, 0xf7, 0x21, 0xc3, 0x19, 0xa0, 0xb7, 0x91, 0xcc, 0x8b, 0x95, 0x74, 0x31,
+	0x2f, 0xc7, 0x19, 0xa2, 0x57, 0xfb, 0x8f, 0xbb, 0xad, 0xa4, 0x77, 0xf4, 0x7f, 0x85, 0x07, 0xd0,
+	0xed, 0xc8, 0x55, 0xf2, 0xef, 0xbb, 0xc9, 0xf5, 0xa1, 0xa1, 0x8a, 0x5a, 0x1c, 0x8d, 0x4b, 0x74,
+	0xe7, 0x7a, 0xa1, 0x25, 0x4d, 0xd0, 0x9b, 0x4a, 0x6d, 0x2a, 0xa1, 0x4b, 0x1f, 0xfe, 0xd3, 0x63,
+	0xd2, 0x6f, 0x2f, 0xed, 0x35, 0xbd, 0x20, 0x9c, 0x4a, 0x9d, 0xb2, 0x22, 0xf2, 0xf6, 0xbe, 0xb3,
+	0x24, 0x6e, 0xed, 0xec, 0xc5, 0x47, 0x68, 0x1f, 0x6b, 0xf2, 0x13, 0x00, 0x00, 0xff, 0xff, 0xfd,
+	0xe8, 0xb9, 0x14, 0xbc, 0x01, 0x00, 0x00,
 }

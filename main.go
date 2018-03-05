@@ -4,20 +4,17 @@ import (
     "flag"
     "strings"
     "fmt"
-//     "time"
     "sync"
     "bytes"
     "os"
     "os/signal"
     "syscall"
     "encoding/hex"
-//     "log"
     "net"
     "golang.org/x/net/context"
     "google.golang.org/grpc"
     pb "./config"
     "google.golang.org/grpc/reflection"
-	"reflect"
     "github.com/golang/glog"
     "runtime"
     "strconv"
@@ -118,13 +115,11 @@ func (s *server) ConfigureSystemID(ctx context.Context, in *pb.SystemIDRequest) 
     return &pb.SystemIDReply{Message: "SID " + in.Sid + " successfully configured"}, nil
 }
 
-func (s *server) GetState(ctx context.Context, in *pb.StateRequest) (*pb.StateReply, error) {
+func (s *server) GetIntf(ctx context.Context, in *pb.IntfRequest) (*pb.IntfReply, error) {
     cfg.lock.Lock()
-    glog.Info("Got state request, dumping state", cfg)
-    var reply pb.StateReply
+    var reply pb.IntfReply
     reply.Intf = make([]string, len(cfg.interfaces))
     for i, intf:= range cfg.interfaces {
-        glog.Infof("Locking interface %s", intf.name)
         intf.lock.Lock()
         interfaces_string := ""
         if intf.adj.state != "UP" {
@@ -132,12 +127,41 @@ func (s *server) GetState(ctx context.Context, in *pb.StateRequest) (*pb.StateRe
         } else {
             interfaces_string += intf.prefix.String() + " " + intf.mask.String() + ", adjacency " + intf.adj.state + " with " + system_id_to_str(intf.adj.neighbor_system_id)
         }
-        fmt.Println(reflect.TypeOf(reply.Intf))
         reply.Intf[i] = interfaces_string
-        glog.Infof("Unlocking interface %s", intf.name)
         intf.lock.Unlock()
     }
     cfg.lock.Unlock()
+    return &reply, nil
+}
+
+func (s *server) GetLsp(ctx context.Context, in *pb.LspRequest) (*pb.LspReply, error) {
+    cfg.lock.Lock()
+    var reply pb.LspReply
+    glog.Infof("Get LSP!")
+    // Extract all the LSPs from the LspDB
+    stack := make([]*AvlNode, 0)
+    current := LspDB.Root
+    done := false
+    reply.Lsp = make([]string, 0)
+    // This is pretty cool, it goes as far as it can to the left
+    // then pops back one node, goes to the right and repeats
+    // which gives you an in-order traversal. Simulates recursion using a stack.
+    for ! done {
+        if current != nil {
+            stack = append(stack, current)
+            current = current.left
+        } else {
+            if len(stack) != 0 {
+                current = stack[len(stack) -1]
+                fmt.Printf("LSP: %v\n", current) 
+                reply.Lsp = append(reply.Lsp, system_id_to_str(current.data.(*IsisLsp).LspID[:6]))
+                stack = stack[:len(stack) -1]
+                current = current.right
+            } else {
+                done = true
+            }
+        }
+    }
     return &reply, nil
 }
 

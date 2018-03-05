@@ -4,6 +4,33 @@ import (
     "testing"
     "fmt"
 )
+
+func TestIterativePrint(t *testing.T) {
+    var root *AvlNode
+    root = &AvlNode{key: 10, left: nil, right: nil, height: 1, data: nil}
+    root = AvlInsert(root, 20, 20) 
+    root = AvlInsert(root, 30, 30) 
+    stack := make([]*AvlNode, 0)
+    current := root
+    done := false
+    for ! done {
+        if current != nil {
+            stack = append(stack, current)
+            current = current.left
+        } else {
+            if len(stack) != 0 {
+                // Pop an item off the stack
+                current = stack[len(stack) -1]
+                fmt.Printf("LSP: %v\n", current) 
+                stack = stack[:len(stack) -1]
+                current = current.right
+            } else {
+                done = true
+            }
+        }
+    }
+}
+
 func TestAvlTreeInsertDup(t *testing.T) {
     var root *AvlNode
     root = &AvlNode{key: 10, left: nil, right: nil, height: 1, data: nil}

@@ -35,7 +35,7 @@ func ConfigureSid(host string, port string, sid string) {
     log.Printf("SID configure result: %s", r.Message)
 }
 
-func GetState(host string, port string) *pb.StateReply {
+func Get(host string, port string, req string) interface{} {
     // TODO: reuse this connection
     target := [2]string{host, port}
     conn, err := grpc.Dial(strings.Join(target[:], ":"), grpc.WithInsecure())
@@ -45,17 +45,27 @@ func GetState(host string, port string) *pb.StateReply {
     defer conn.Close()
 
     c := pb.NewStateClient(conn)
-    
-    r, err := c.GetState(context.Background(), &pb.StateRequest{ShRun: ""})
-    if err != nil {
-        log.Fatalf("Unable to get state: %v", err)
-    }
-    log.Printf("State response %s", r)
-    return r
+     
+    if req == "intf" {
+        r, err := c.GetIntf(context.Background(), &pb.IntfRequest{ShIntf: ""})
+        if err != nil {
+            log.Fatalf("Unable to get state: %v", err)
+        }
+        log.Printf("Intf response %s", r)
+        return r
+    } else if req == "lsp" {
+        r, err := c.GetLsp(context.Background(), &pb.LspRequest{ShLsp: ""})
+        if err != nil {
+            log.Fatalf("Unable to get state: %v", err)
+        }
+        log.Printf("Intf response %s", r)
+        return r
+    } 
+    return nil
 }
 
 func TestAdjBringUp(t *testing.T) {
-    // Configure SIDs of the two nodes
+    // Configure SIDs of the three nodes
     nodeIpAddresses := []string{os.Getenv("node1"), os.Getenv("node2"), os.Getenv("node3")}
     fmt.Println(nodeIpAddresses)
     for k := 0; k < len(nodeIpAddresses); k++ {
@@ -67,7 +77,8 @@ func TestAdjBringUp(t *testing.T) {
     currPoll := 0
     for currPoll < maxPolls {
         for k := 0; k < len(nodeIpAddresses); k++ {
-            intfs := GetState(nodeIpAddresses[k], "50051").Intf
+            tmp := Get(nodeIpAddresses[k], "50051", "intf")
+            intfs := tmp.(*pb.IntfReply).Intf
             numAdjUp := 0  
             for _, intf := range intfs{
                 if strings.Contains(intf, "UP") {
@@ -83,4 +94,13 @@ func TestAdjBringUp(t *testing.T) {
         currPoll += 1
         time.Sleep(2000 * time.Millisecond)
    }
+    time.Sleep(7000 * time.Millisecond)  // Give it some time for LSP flooding
+    // Once all the adjacencies are up, print the LSPs
+    for k := 0; k < len(nodeIpAddresses); k++ {
+        tmp := Get(nodeIpAddresses[k], "50051", "lsp")
+        lsps := tmp.(*pb.LspReply).Lsp
+        for _, lsp := range lsps {
+            log.Printf("LSP %v", lsp)
+        }
+    }
 }

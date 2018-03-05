@@ -11,15 +11,28 @@ service Configure {
 
 service State {
     // Could also support streaming updates out this system ?
-    rpc GetState (StateRequest) returns (StateReply) {}
+    rpc GetIntf (IntfRequest) returns (IntfReply) {}
+    rpc GetLsp (LspRequest) returns (LspReply) {}
 }
 
-message StateRequest {
-    string sh_run = 1; // Like a show run command on a router
+message IntfRequest {
+    // Optionally specify the interface to be selected 
+    // Empty string signifies a request for all interfaces 
+    string shIntf = 1; 
 }
 
-message StateReply {
+message IntfReply {
     repeated string intf = 1;
+}
+
+message LspRequest {
+    string shLsp = 1; 
+}
+
+message LspReply {
+    // Similar to interface requests, can specify a specific lsp
+    // or an empty string will return all of them
+    repeated string lsp = 1;
 }
 
 // The request message containing the system id to use
