@@ -19,7 +19,7 @@ import (
     "testing"
 )
 
-func ConfigureSid(host string, port string, sid string) {
+func ConfigureSid(host string, port string, sid string) *pb.SystemIDCfgReply {
     target := [2]string{host, port}
     conn, err := grpc.Dial(strings.Join(target[:], ":"), grpc.WithInsecure())
     if err != nil {
@@ -28,11 +28,11 @@ func ConfigureSid(host string, port string, sid string) {
     defer conn.Close()
 
     c := pb.NewConfigureClient(conn)
-    r, err := c.ConfigureSystemID(context.Background(), &pb.SystemIDRequest{Sid: sid})
+    rsp, err := c.ConfigureSystemID(context.Background(), &pb.SystemIDCfgRequest{Sid: sid})
     if err != nil {
         log.Fatalf("Unable to configure SID: %v", err)
     }
-    log.Printf("SID configure result: %s", r.Message)
+    return rsp
 }
 
 func Get(host string, port string, req string) interface{} {
@@ -64,20 +64,28 @@ func Get(host string, port string, req string) interface{} {
     return nil
 }
 
-func TestAdjBringUp(t *testing.T) {
+func TestSystemIDConfig(t *testing.T) {
     // Configure SIDs of the three nodes
     nodeIpAddresses := []string{os.Getenv("node1"), os.Getenv("node2"), os.Getenv("node3")}
-    fmt.Println(nodeIpAddresses)
     for k := 0; k < len(nodeIpAddresses); k++ {
-        ConfigureSid(nodeIpAddresses[k], "50051", fmt.Sprintf("1111.1111.111%d", k + 1))
+        rsp := ConfigureSid(nodeIpAddresses[k], GRPC_CFG_SERVER_PORT, fmt.Sprintf("1111.1111.111%d", k + 1))
+        fmt.Println(rsp.Ack)
+        if ! strings.Contains(rsp.Ack, "successfully") {
+            t.Fail()
+        }
     }
+}
+
+
+func TestAdjBringUp(t *testing.T) {
     // Poll for adjacency establishment
+    nodeIpAddresses := []string{os.Getenv("node1"), os.Getenv("node2"), os.Getenv("node3")}
     adjCount := make(map[int]int) 
     maxPolls := 10
     currPoll := 0
     for currPoll < maxPolls {
         for k := 0; k < len(nodeIpAddresses); k++ {
-            tmp := Get(nodeIpAddresses[k], "50051", "intf")
+            tmp := Get(nodeIpAddresses[k], GRPC_CFG_SERVER_PORT, "intf")
             intfs := tmp.(*pb.IntfReply).Intf
             numAdjUp := 0  
             for _, intf := range intfs{
@@ -93,11 +101,18 @@ func TestAdjBringUp(t *testing.T) {
         }
         currPoll += 1
         time.Sleep(2000 * time.Millisecond)
-   }
+    }
+    if currPoll == maxPolls {
+        t.Fail()
+    }
+}
+
+func TestLspFlooding(t *testing.T) {
+    nodeIpAddresses := []string{os.Getenv("node1"), os.Getenv("node2"), os.Getenv("node3")}
     time.Sleep(7000 * time.Millisecond)  // Give it some time for LSP flooding
     // Once all the adjacencies are up, print the LSPs
     for k := 0; k < len(nodeIpAddresses); k++ {
-        tmp := Get(nodeIpAddresses[k], "50051", "lsp")
+        tmp := Get(nodeIpAddresses[k], GRPC_CFG_SERVER_PORT, "lsp")
         lsps := tmp.(*pb.LspReply).Lsp
         for _, lsp := range lsps {
             log.Printf("LSP %v", lsp)

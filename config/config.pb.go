@@ -14,6 +14,8 @@ It has these top-level messages:
 	LspReply
 	SystemIDRequest
 	SystemIDReply
+	SystemIDCfgRequest
+	SystemIDCfgReply
 */
 package config
 
@@ -105,9 +107,8 @@ func (m *LspReply) GetLsp() []string {
 	return nil
 }
 
-// The request message containing the system id to use
 type SystemIDRequest struct {
-	Sid string `protobuf:"bytes,1,opt,name=sid" json:"sid,omitempty"`
+	ShSystemID string `protobuf:"bytes,1,opt,name=shSystemID" json:"shSystemID,omitempty"`
 }
 
 func (m *SystemIDRequest) Reset()                    { *m = SystemIDRequest{} }
@@ -115,16 +116,15 @@ func (m *SystemIDRequest) String() string            { return proto.CompactTextS
 func (*SystemIDRequest) ProtoMessage()               {}
 func (*SystemIDRequest) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{4} }
 
-func (m *SystemIDRequest) GetSid() string {
+func (m *SystemIDRequest) GetShSystemID() string {
 	if m != nil {
-		return m.Sid
+		return m.ShSystemID
 	}
 	return ""
 }
 
-// The response message containing the greetings
 type SystemIDReply struct {
-	Message string `protobuf:"bytes,1,opt,name=message" json:"message,omitempty"`
+	Sid string `protobuf:"bytes,1,opt,name=sid" json:"sid,omitempty"`
 }
 
 func (m *SystemIDReply) Reset()                    { *m = SystemIDReply{} }
@@ -132,9 +132,43 @@ func (m *SystemIDReply) String() string            { return proto.CompactTextStr
 func (*SystemIDReply) ProtoMessage()               {}
 func (*SystemIDReply) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{5} }
 
-func (m *SystemIDReply) GetMessage() string {
+func (m *SystemIDReply) GetSid() string {
 	if m != nil {
-		return m.Message
+		return m.Sid
+	}
+	return ""
+}
+
+// The request message containing the system id to use
+type SystemIDCfgRequest struct {
+	Sid string `protobuf:"bytes,1,opt,name=sid" json:"sid,omitempty"`
+}
+
+func (m *SystemIDCfgRequest) Reset()                    { *m = SystemIDCfgRequest{} }
+func (m *SystemIDCfgRequest) String() string            { return proto.CompactTextString(m) }
+func (*SystemIDCfgRequest) ProtoMessage()               {}
+func (*SystemIDCfgRequest) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{6} }
+
+func (m *SystemIDCfgRequest) GetSid() string {
+	if m != nil {
+		return m.Sid
+	}
+	return ""
+}
+
+// The response message containing the greetings
+type SystemIDCfgReply struct {
+	Ack string `protobuf:"bytes,1,opt,name=ack" json:"ack,omitempty"`
+}
+
+func (m *SystemIDCfgReply) Reset()                    { *m = SystemIDCfgReply{} }
+func (m *SystemIDCfgReply) String() string            { return proto.CompactTextString(m) }
+func (*SystemIDCfgReply) ProtoMessage()               {}
+func (*SystemIDCfgReply) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{7} }
+
+func (m *SystemIDCfgReply) GetAck() string {
+	if m != nil {
+		return m.Ack
 	}
 	return ""
 }
@@ -146,6 +180,8 @@ func init() {
 	proto.RegisterType((*LspReply)(nil), "config.LspReply")
 	proto.RegisterType((*SystemIDRequest)(nil), "config.SystemIDRequest")
 	proto.RegisterType((*SystemIDReply)(nil), "config.SystemIDReply")
+	proto.RegisterType((*SystemIDCfgRequest)(nil), "config.SystemIDCfgRequest")
+	proto.RegisterType((*SystemIDCfgReply)(nil), "config.SystemIDCfgReply")
 }
 
 // Reference imports to suppress errors if they are not otherwise used.
@@ -159,7 +195,7 @@ const _ = grpc.SupportPackageIsVersion4
 // Client API for Configure service
 
 type ConfigureClient interface {
-	ConfigureSystemID(ctx context.Context, in *SystemIDRequest, opts ...grpc.CallOption) (*SystemIDReply, error)
+	ConfigureSystemID(ctx context.Context, in *SystemIDCfgRequest, opts ...grpc.CallOption) (*SystemIDCfgReply, error)
 }
 
 type configureClient struct {
@@ -170,8 +206,8 @@ func NewConfigureClient(cc *grpc.ClientConn) ConfigureClient {
 	return &configureClient{cc}
 }
 
-func (c *configureClient) ConfigureSystemID(ctx context.Context, in *SystemIDRequest, opts ...grpc.CallOption) (*SystemIDReply, error) {
-	out := new(SystemIDReply)
+func (c *configureClient) ConfigureSystemID(ctx context.Context, in *SystemIDCfgRequest, opts ...grpc.CallOption) (*SystemIDCfgReply, error) {
+	out := new(SystemIDCfgReply)
 	err := grpc.Invoke(ctx, "/config.Configure/ConfigureSystemID", in, out, c.cc, opts...)
 	if err != nil {
 		return nil, err
@@ -182,7 +218,7 @@ func (c *configureClient) ConfigureSystemID(ctx context.Context, in *SystemIDReq
 // Server API for Configure service
 
 type ConfigureServer interface {
-	ConfigureSystemID(context.Context, *SystemIDRequest) (*SystemIDReply, error)
+	ConfigureSystemID(context.Context, *SystemIDCfgRequest) (*SystemIDCfgReply, error)
 }
 
 func RegisterConfigureServer(s *grpc.Server, srv ConfigureServer) {
@@ -190,7 +226,7 @@ func RegisterConfigureServer(s *grpc.Server, srv ConfigureServer) {
 }
 
 func _Configure_ConfigureSystemID_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(SystemIDRequest)
+	in := new(SystemIDCfgRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -202,7 +238,7 @@ func _Configure_ConfigureSystemID_Handler(srv interface{}, ctx context.Context, 
 		FullMethod: "/config.Configure/ConfigureSystemID",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ConfigureServer).ConfigureSystemID(ctx, req.(*SystemIDRequest))
+		return srv.(ConfigureServer).ConfigureSystemID(ctx, req.(*SystemIDCfgRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -226,6 +262,7 @@ type StateClient interface {
 	// Could also support streaming updates out this system ?
 	GetIntf(ctx context.Context, in *IntfRequest, opts ...grpc.CallOption) (*IntfReply, error)
 	GetLsp(ctx context.Context, in *LspRequest, opts ...grpc.CallOption) (*LspReply, error)
+	GetSystemID(ctx context.Context, in *SystemIDRequest, opts ...grpc.CallOption) (*SystemIDReply, error)
 }
 
 type stateClient struct {
@@ -254,12 +291,22 @@ func (c *stateClient) GetLsp(ctx context.Context, in *LspRequest, opts ...grpc.C
 	return out, nil
 }
 
+func (c *stateClient) GetSystemID(ctx context.Context, in *SystemIDRequest, opts ...grpc.CallOption) (*SystemIDReply, error) {
+	out := new(SystemIDReply)
+	err := grpc.Invoke(ctx, "/config.State/GetSystemID", in, out, c.cc, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // Server API for State service
 
 type StateServer interface {
 	// Could also support streaming updates out this system ?
 	GetIntf(context.Context, *IntfRequest) (*IntfReply, error)
 	GetLsp(context.Context, *LspRequest) (*LspReply, error)
+	GetSystemID(context.Context, *SystemIDRequest) (*SystemIDReply, error)
 }
 
 func RegisterStateServer(s *grpc.Server, srv StateServer) {
@@ -302,6 +349,24 @@ func _State_GetLsp_Handler(srv interface{}, ctx context.Context, dec func(interf
 	return interceptor(ctx, in, info, handler)
 }
 
+func _State_GetSystemID_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SystemIDRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateServer).GetSystemID(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/config.State/GetSystemID",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateServer).GetSystemID(ctx, req.(*SystemIDRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 var _State_serviceDesc = grpc.ServiceDesc{
 	ServiceName: "config.State",
 	HandlerType: (*StateServer)(nil),
@@ -314,6 +379,10 @@ var _State_serviceDesc = grpc.ServiceDesc{
 			MethodName: "GetLsp",
 			Handler:    _State_GetLsp_Handler,
 		},
+		{
+			MethodName: "GetSystemID",
+			Handler:    _State_GetSystemID_Handler,
+		},
 	},
 	Streams:  []grpc.StreamDesc{},
 	Metadata: "config.proto",
@@ -322,22 +391,24 @@ var _State_serviceDesc = grpc.ServiceDesc{
 func init() { proto.RegisterFile("config.proto", fileDescriptor0) }
 
 var fileDescriptor0 = []byte{
-	// 263 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x64, 0x91, 0x5f, 0x4f, 0xc2, 0x40,
-	0x10, 0xc4, 0x25, 0x95, 0x62, 0x47, 0x8d, 0x65, 0xfd, 0x47, 0x1a, 0x13, 0xcd, 0x19, 0x13, 0x7c,
-	0x21, 0x06, 0x3e, 0x82, 0x1a, 0x42, 0xd2, 0xa7, 0xf2, 0x09, 0x50, 0x0f, 0x68, 0x52, 0xda, 0x93,
-	0x3d, 0x1e, 0xfa, 0xed, 0xcd, 0x5d, 0xef, 0xc4, 0xca, 0xdb, 0xce, 0xce, 0xec, 0xaf, 0xe9, 0x1c,
-	0xce, 0x3e, 0xab, 0x72, 0x99, 0xaf, 0x46, 0x6a, 0x5b, 0xe9, 0x8a, 0xc2, 0x46, 0x89, 0x27, 0x9c,
-	0xce, 0x4a, 0xbd, 0xcc, 0xe4, 0xf7, 0x4e, 0xb2, 0xa6, 0x1b, 0x84, 0xbc, 0x36, 0x8b, 0x41, 0xe7,
-	0xa1, 0x33, 0x8c, 0x32, 0xa7, 0xc4, 0x3d, 0xa2, 0x26, 0xa6, 0x8a, 0x9a, 0x08, 0xc7, 0x79, 0x13,
-	0x09, 0x86, 0x51, 0x66, 0x67, 0x21, 0x80, 0x94, 0x95, 0xc7, 0x5c, 0xa1, 0xcb, 0xeb, 0x94, 0x95,
-	0xa3, 0x34, 0x42, 0xdc, 0xe1, 0xc4, 0x66, 0x0c, 0x23, 0x46, 0x50, 0x58, 0xdf, 0x20, 0xcc, 0x28,
-	0x1e, 0x71, 0x31, 0xaf, 0x59, 0xcb, 0xcd, 0xec, 0xcd, 0x63, 0x62, 0x04, 0x9c, 0x7f, 0x39, 0x88,
-	0x19, 0xc5, 0x33, 0xce, 0xf7, 0x21, 0xc3, 0x19, 0xa0, 0xb7, 0x91, 0xcc, 0x8b, 0x95, 0x74, 0x31,
-	0x2f, 0xc7, 0x19, 0xa2, 0x57, 0xfb, 0x8f, 0xbb, 0xad, 0xa4, 0x77, 0xf4, 0x7f, 0x85, 0x07, 0xd0,
-	0xed, 0xc8, 0x55, 0xf2, 0xef, 0xbb, 0xc9, 0xf5, 0xa1, 0xa1, 0x8a, 0x5a, 0x1c, 0x8d, 0x4b, 0x74,
-	0xe7, 0x7a, 0xa1, 0x25, 0x4d, 0xd0, 0x9b, 0x4a, 0x6d, 0x2a, 0xa1, 0x4b, 0x1f, 0xfe, 0xd3, 0x63,
-	0xd2, 0x6f, 0x2f, 0xed, 0x35, 0xbd, 0x20, 0x9c, 0x4a, 0x9d, 0xb2, 0x22, 0xf2, 0xf6, 0xbe, 0xb3,
-	0x24, 0x6e, 0xed, 0xec, 0xc5, 0x47, 0x68, 0x1f, 0x6b, 0xf2, 0x13, 0x00, 0x00, 0xff, 0xff, 0xfd,
-	0xe8, 0xb9, 0x14, 0xbc, 0x01, 0x00, 0x00,
+	// 304 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x6c, 0x92, 0x4d, 0x4f, 0xc2, 0x40,
+	0x10, 0x86, 0x25, 0x48, 0xb5, 0x83, 0xc6, 0x32, 0x7e, 0x91, 0xc6, 0xf8, 0xb1, 0x51, 0xc3, 0x89,
+	0x28, 0xfc, 0x00, 0x0f, 0x98, 0x34, 0xc4, 0x9e, 0xca, 0xc5, 0x6b, 0xad, 0x5b, 0xda, 0x50, 0xe9,
+	0xca, 0x2e, 0x87, 0xfe, 0x2a, 0xff, 0xa2, 0xd9, 0x2f, 0xa0, 0xd6, 0xdb, 0xcc, 0x3b, 0xef, 0xfb,
+	0x74, 0x33, 0x53, 0x38, 0x4a, 0xca, 0x65, 0x9a, 0xcf, 0x87, 0x6c, 0x55, 0x8a, 0x12, 0x1d, 0xdd,
+	0x91, 0x07, 0xe8, 0x4e, 0x97, 0x22, 0x8d, 0xe8, 0xf7, 0x9a, 0x72, 0x81, 0x17, 0xe0, 0xf0, 0x4c,
+	0x0a, 0xfd, 0xd6, 0x6d, 0x6b, 0xe0, 0x46, 0xa6, 0x23, 0x37, 0xe0, 0x6a, 0x1b, 0x2b, 0x2a, 0x44,
+	0xd8, 0xcf, 0xb5, 0xa5, 0x3d, 0x70, 0x23, 0x55, 0x13, 0x02, 0x10, 0x72, 0x66, 0x31, 0x67, 0xd0,
+	0xe1, 0x59, 0xc8, 0x99, 0xa1, 0xe8, 0x86, 0x5c, 0xc1, 0xa1, 0xf2, 0x48, 0x86, 0x07, 0xed, 0x42,
+	0xcd, 0x25, 0x42, 0x96, 0xe4, 0x19, 0x4e, 0x66, 0x15, 0x17, 0xf4, 0x6b, 0xfa, 0x6a, 0x31, 0xd7,
+	0x00, 0x3c, 0xb3, 0xa2, 0x61, 0xed, 0x28, 0xe4, 0x0e, 0x8e, 0xb7, 0x11, 0x43, 0xe5, 0xf9, 0xa7,
+	0x71, 0xca, 0x92, 0x3c, 0x02, 0x5a, 0xcb, 0x24, 0x9d, 0x5b, 0x70, 0xd3, 0x77, 0x0f, 0x5e, 0xcd,
+	0x67, 0x68, 0x71, 0xb2, 0xb0, 0xae, 0x38, 0x59, 0x8c, 0xde, 0xc1, 0x9d, 0xa8, 0xbd, 0xad, 0x57,
+	0x14, 0xdf, 0xa0, 0xb7, 0x69, 0x6c, 0x16, 0xfd, 0xa1, 0x59, 0x73, 0xf3, 0xab, 0x7e, 0xff, 0xdf,
+	0x19, 0x2b, 0x2a, 0xb2, 0x37, 0xfa, 0x69, 0x41, 0x67, 0x26, 0x62, 0x41, 0x71, 0x0c, 0x07, 0x01,
+	0x15, 0x72, 0xdb, 0x78, 0x6a, 0x03, 0x3b, 0x27, 0xf2, 0x7b, 0x75, 0x51, 0xc5, 0xf1, 0x09, 0x9c,
+	0x80, 0x8a, 0x90, 0x33, 0x44, 0x3b, 0xde, 0x9e, 0xc3, 0xf7, 0x6a, 0x9a, 0x4e, 0xbc, 0x40, 0x37,
+	0xa0, 0x62, 0xf3, 0xee, 0xcb, 0xbf, 0x6f, 0xb3, 0xd9, 0xf3, 0xe6, 0x40, 0x01, 0x3e, 0x1c, 0xf5,
+	0x23, 0x8d, 0x7f, 0x03, 0x00, 0x00, 0xff, 0xff, 0xc9, 0x12, 0x2f, 0x14, 0x58, 0x02, 0x00, 0x00,
 }

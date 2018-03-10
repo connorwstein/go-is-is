@@ -210,6 +210,10 @@ func recvPdus(ifname string, hello chan [READ_BUF_SIZE]byte, update chan [READ_B
         // Check the common IS-IS header for the pdu type
         // This receive frame will have everything including the ethernet frame
         // 14 bytes ethernet header, then its the 5th byte after that in the common header
+        // Make sure it is an IS-IS protocol packet
+        if buf[14] != 0x83 {
+            continue
+        }
         pduType := buf[14+4]
         if pduType == 0x0F {
             hello <- buf  

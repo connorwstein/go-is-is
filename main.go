@@ -25,7 +25,7 @@ var l1_multicast []byte
 var cfg *Config
 
 const (
-    GRPC_CFG_SERVER_PORT = ":50051"
+    GRPC_CFG_SERVER_PORT = "50051"
     RECV_LOG_PREFIX = "RECV:"
     SEND_LOG_PREFIX = "SEND:"
     CHAN_BUF_SIZE = 100
@@ -103,7 +103,7 @@ func cleanup() {
 
 type server struct{}
 
-func (s *server) ConfigureSystemID(ctx context.Context, in *pb.SystemIDRequest) (*pb.SystemIDReply, error) {
+func (s *server) ConfigureSystemID(ctx context.Context, in *pb.SystemIDCfgRequest) (*pb.SystemIDCfgReply, error) {
     cfg.lock.Lock()
     cfg.sid = in.Sid
     glog.Info("Got SID request, setting SID to " + cfg.sid)
@@ -112,7 +112,15 @@ func (s *server) ConfigureSystemID(ctx context.Context, in *pb.SystemIDRequest) 
     // successfully configured.
     // Note that even through the proto has a the field defined with lowercase, it is converted
     // to uppercase so it can be exported golang style
-    return &pb.SystemIDReply{Message: "SID " + in.Sid + " successfully configured"}, nil
+    return &pb.SystemIDCfgReply{Ack: "SID " + in.Sid + " successfully configured"}, nil
+}
+
+func (s *server) GetSystemID(ctx context.Context, in *pb.SystemIDRequest) (*pb.SystemIDReply, error) {
+    cfg.lock.Lock()
+    var reply pb.SystemIDReply
+    reply.Sid = cfg.sid
+    cfg.lock.Unlock()
+    return &reply, nil
 }
 
 func (s *server) GetIntf(ctx context.Context, in *pb.IntfRequest) (*pb.IntfReply, error) {
@@ -162,6 +170,7 @@ func (s *server) GetLsp(ctx context.Context, in *pb.LspRequest) (*pb.LspReply, e
             }
         }
     }
+    cfg.lock.Unlock()
     return &reply, nil
 }
 

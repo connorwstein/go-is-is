@@ -6,13 +6,14 @@ syntax = "proto3";
 package config;
 
 service Configure {
-    rpc ConfigureSystemID (SystemIDRequest) returns (SystemIDReply) {}
+    rpc ConfigureSystemID (SystemIDCfgRequest) returns (SystemIDCfgReply) {}
 }
 
 service State {
     // Could also support streaming updates out this system ?
     rpc GetIntf (IntfRequest) returns (IntfReply) {}
     rpc GetLsp (LspRequest) returns (LspReply) {}
+    rpc GetSystemID (SystemIDRequest) returns (SystemIDReply) {}
 }
 
 message IntfRequest {
@@ -35,12 +36,19 @@ message LspReply {
     repeated string lsp = 1;
 }
 
-// The request message containing the system id to use
 message SystemIDRequest {
-    string sid= 1;
+    string shSystemID = 1;
+}
+message SystemIDReply {
+    string sid = 1; 
+}
+
+// The request message containing the system id to use
+message SystemIDCfgRequest {
+    string sid = 1;
 }
 
 // The response message containing the greetings
-message SystemIDReply {
-    string message = 1;
+message SystemIDCfgReply {
+    string ack = 1;
 }
