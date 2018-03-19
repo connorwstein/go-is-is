@@ -40,6 +40,13 @@ type IsisPDUHeader struct {
     Maximum_area_addresses byte
 }
 
+type IsisTLV struct {
+    next_tlv *IsisTLV
+    tlv_type byte
+    tlv_length byte
+    tlv_value []byte
+}
+
 func htons(host uint16) uint16 {
     return (host & 0xff) << 8 | (host >> 8)
 }
@@ -177,27 +184,32 @@ func sendFrame(frame []byte, ifname string) {
     }
 }
 
-func recvFrame(ifname string) [READ_BUF_SIZE]byte {
+func recvFrame(ifname string) []byte {
     // Only return once a packet has been received which is not one
     // we sent ourselves
     // TODO: tune the buffer size
     src := getMac(ifname)
-    var b [READ_BUF_SIZE]byte
+    var buf bytes.Buffer
+    var rawBuf [READ_BUF_SIZE]byte
+    buf.Grow(READ_BUF_SIZE)
     for {
         // Blocks until something is available
-        _, _, e := RawSocks[ifname][1].Read(b[:])
+        buf.Reset() // Zero out the buffer
+        numBytes, _, e := RawSocks[ifname][1].Read(rawBuf[:])
         if e != nil {
             glog.Error("Error reading bytes: ", e)
         } else {
             // Return anything that we did not send ourselves
-            if ! bytes.Equal(b[6:12], src) {
-                return b
+            if ! bytes.Equal(buf.Bytes()[6:12], src) {
+                // Now copy numBytes from raw buf into our buffer
+                buf.Write(rawBuf[:numBytes])
+                return buf.Bytes()
             }
         }
     }
 }
 
-func recvPdus(ifname string, hello chan [READ_BUF_SIZE]byte, update chan [READ_BUF_SIZE]byte) {
+func recvPdus(ifname string, hello chan []byte, update chan []byte) {
     // Continuously read from the raw socks associated with the specified
     // interface, putting the packets on the appropriate channels
     // for the other goroutines to process 

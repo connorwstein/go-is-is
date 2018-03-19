@@ -2,12 +2,10 @@
 package main
 
 import (
-//     "fmt"
     "time"
     "bytes"
     "encoding/binary"
-//     "encoding/hex"
-//     "strings"
+    "encoding/hex"
     "unsafe"
     "github.com/golang/glog"
 )
@@ -35,13 +33,6 @@ type IsisLanHelloPDU struct {
     Header IsisPDUHeader
     LanHelloHeader IsisLanHelloHeader
     FirstTlv *IsisTLV // Linked list of TLVs
-}
-
-type IsisTLV struct {
-    next_tlv *IsisTLV
-    tlv_type byte
-    tlv_length byte
-    tlv_value []byte
 }
 
 type HelloResponse struct {
@@ -88,11 +79,12 @@ func serializeIsisHelloPdu(pdu *IsisLanHelloPDU) []byte {
     binary.Write(&buf, binary.BigEndian, pdu.LanHelloHeader)
     if pdu.FirstTlv != nil {
         // TODO: Will need to keep walking these tlvs until we hit the end somehow
-        glog.Info("Serializing neighbor tlv", pdu.FirstTlv)
+        glog.V(2).Info("Serializing neighbor tlv", pdu.FirstTlv)
         binary.Write(&buf, binary.BigEndian, pdu.FirstTlv.tlv_type)
         binary.Write(&buf, binary.BigEndian, pdu.FirstTlv.tlv_length)
         binary.Write(&buf, binary.BigEndian, pdu.FirstTlv.tlv_value)
     }
+    glog.V(2).Info("Serialized neighbor tlv\n", hex.Dump(buf.Bytes()[:]))
     return buf.Bytes()
 }
 
@@ -106,20 +98,21 @@ func deserializeIsisHelloPdu(raw_bytes []byte) *IsisLanHelloPDU {
     var helloHeader IsisLanHelloHeader
     binary.Read(buf, binary.BigEndian, &commonHeader)
     binary.Read(buf, binary.BigEndian, &helloHeader)
-    glog.Info("Binary decode common header:", commonHeader)
-    glog.Info("Binary decode hello header:", helloHeader)
+    glog.V(2).Info("Binary decode common header:", commonHeader)
+    glog.V(2).Info("Binary decode hello header:", helloHeader)
     var hello IsisLanHelloPDU
     hello.LanHelloHeader.SourceSystemId = helloHeader.SourceSystemId
     var neighborTlv IsisTLV // Golang automagically tosses this on the heap, I like it
     ethernetHeaderSize := 14
     tlv_offset := ethernetHeaderSize + int(unsafe.Sizeof(commonHeader)) + int(unsafe.Sizeof(helloHeader))
-    if raw_bytes[tlv_offset] != 0 {
+    glog.Infof("tlv offset %d raw bytes %d", tlv_offset, len(raw_bytes))
+    if tlv_offset < len(raw_bytes) {
         // Then we have a tlv
-        glog.Infof("TLV code %d received!\n", raw_bytes[tlv_offset])
         neighborTlv.tlv_type = raw_bytes[tlv_offset]
         neighborTlv.tlv_length = raw_bytes[tlv_offset + 1]
+        glog.V(2).Infof("TLV code %d received, length %d!\n", raw_bytes[tlv_offset], raw_bytes[tlv_offset + 1])
         neighborTlv.tlv_value = make([]byte, neighborTlv.tlv_length)
-        copy(neighborTlv.tlv_value, raw_bytes[tlv_offset + 2: tlv_offset + 2 + 6])
+        copy(neighborTlv.tlv_value, raw_bytes[tlv_offset + 2: tlv_offset + 2 + int(neighborTlv.tlv_length)])
         hello.FirstTlv = &neighborTlv
     } else {
         hello.FirstTlv = nil
@@ -134,13 +127,13 @@ func sendHello(intf *Intf, sid string, neighbors_tlv *IsisTLV, sendChan chan []b
     if neighbors_tlv != nil {
         hello_l1_lan.FirstTlv = neighbors_tlv
     }
-    glog.Info("Sending hello with tlv:", hello_l1_lan.FirstTlv)
+    glog.V(2).Info("Sending hello with tlv:", hello_l1_lan.FirstTlv)
     sendChan <- buildEthernetFrame(l1_multicast,
                                  getMac(intf.name),
                                  serializeIsisHelloPdu(hello_l1_lan))
 }
 
-func recvHello(intf *Intf, helloChan chan [READ_BUF_SIZE]byte) *HelloResponse {
+func recvHello(intf *Intf, helloChan chan []byte) *HelloResponse {
     // Blocks until a frame is available
     // Returns [READBUF_SIZE]byte including the full ethernet frame
     // This buf size needs to be big enough to at least get the length of the PDU
@@ -151,15 +144,14 @@ func recvHello(intf *Intf, helloChan chan [READ_BUF_SIZE]byte) *HelloResponse {
     hello := <- helloChan
     // Drop the frame unless it is the special multicast mac
     if bytes.Equal(hello[0:6], l1_multicast) {
-        glog.Infof("Got hello from %X:%X:%X:%X:%X:%X\n",
+        glog.V(2).Infof("Got hello from %X:%X:%X:%X:%X:%X\n",
                    hello[6], hello[7], hello[8], hello[9], hello[10], hello[11])
-//         glog.Infof(hex.Dump(hello[:]))
+        glog.V(2).Infof(hex.Dump(hello[:]))
         // Need to extract the system id from the packet
         received_hello := deserializeIsisHelloPdu(hello[0:len(hello)])
         var rsp HelloResponse
         rsp.lan_hello_pdu = received_hello
         rsp.source_mac = hello[6:12]
-//         rsp.intf = intf
         return &rsp
     }
     return nil
@@ -169,7 +161,7 @@ func isisHelloSend(intf *Intf, sendChan chan []byte) {
     // Send hellos every HELLO_INTERVAL after a system ID has been configured
 	// on the specified interface
     for {
-        glog.Infof("Locking interface %s", intf.name)
+        glog.V(2).Infof("Locking interface and config %s", intf.name)
         intf.lock.Lock()
         cfg.lock.Lock()
         if cfg.sid != "" {
@@ -178,14 +170,14 @@ func isisHelloSend(intf *Intf, sendChan chan []byte) {
                 sendHello(intf, cfg.sid, nil, sendChan)
             }
         }
+        glog.V(2).Infof("Unlocking interface and config %s", intf.name)
         cfg.lock.Unlock()
-        glog.Infof("Unlocking interface %s", intf.name)
         intf.lock.Unlock()
         time.Sleep(HELLO_INTERVAL * time.Millisecond)
     }
 }
 
-func isisHelloRecv(intf *Intf, helloChan chan [READ_BUF_SIZE]byte, sendChan chan []byte) {
+func isisHelloRecv(intf *Intf, helloChan chan []byte, sendChan chan []byte) {
     // Forever receiving hellos on the passed interface
     // Updating the status of the interface as an adjacency is
     // established
@@ -200,8 +192,6 @@ func isisHelloRecv(intf *Intf, helloChan chan [READ_BUF_SIZE]byte, sendChan chan
         intf.lock.Lock()
         glog.Info("Receving on intf: ", intf.name, " goroutine ID ", getGID())
         intf.lock.Unlock()
-        // Usynchronized read ?
-//         glog.Infof("%v: %v\n", rsp, rsp.intf)
         // Depending on what type of hello it is, respond
         // Respond to this hello packet with a IS-Neighbor TLV
         // If we receive a hello with no neighbor tlv, we copy
@@ -209,7 +199,7 @@ func isisHelloRecv(intf *Intf, helloChan chan [READ_BUF_SIZE]byte, sendChan chan
         // then mark the adjacency on that interface as INITIALIZING
         // If we receive a hello with our own mac in the neighbor tlv
         // we mark the adjacency as UP
-        glog.Infof("Got hello from %v\n", rsp.lan_hello_pdu.LanHelloHeader.SourceSystemId)
+        glog.Infof("Got hello from %v\n", system_id_to_str(rsp.lan_hello_pdu.LanHelloHeader.SourceSystemId[:]))
         // even if our adjacency is up, we need to respond to other folks
         if rsp.lan_hello_pdu.FirstTlv == nil {
             // No TLVs yet in this hello packet so we need to add in the IS neighbors tlv
@@ -240,7 +230,6 @@ func isisHelloRecv(intf *Intf, helloChan chan [READ_BUF_SIZE]byte, sendChan chan
                 glog.Infof("Adjacency up between %v and %v on intf %v", cfg.sid, system_id_to_str(intf.adj.neighbor_system_id), intf.name)
                 // Signal that an adjacency change has occurred, so we should regenerate our lsp
                 // and flood
-//                 GenerateLocalLsp(rsp.intf, true)
                 // Optimization might be to use this adjacency information to only update that part of the 
                 // LSP, rather than rebuilding the whole thing from the adjacency database
                 intf.lock.Unlock()

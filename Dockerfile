@@ -15,6 +15,7 @@ WORKDIR /opt/go-is-is
 RUN /usr/local/go/bin/go get -u google.golang.org/grpc 
 RUN /usr/local/go/bin/go get -u github.com/golang/protobuf/protoc-gen-go
 RUN /usr/local/go/bin/go get -u github.com/golang/glog
+RUN /usr/local/go/bin/go get -u github.com/vishvananda/netlink
 ENV PATH="/usr/local/go/bin:/root/go/bin:${PATH}"
 RUN curl -fsSL https://get.docker.com | sh
 RUN echo 'set auto-load safe-path /' > /root/.gdbinit

@@ -145,7 +145,6 @@ func (s *server) GetIntf(ctx context.Context, in *pb.IntfRequest) (*pb.IntfReply
 func (s *server) GetLsp(ctx context.Context, in *pb.LspRequest) (*pb.LspReply, error) {
     cfg.lock.Lock()
     var reply pb.LspReply
-    glog.Infof("Get LSP!")
     // Extract all the LSPs from the LspDB
     stack := make([]*AvlNode, 0)
     current := LspDB.Root
@@ -161,7 +160,6 @@ func (s *server) GetLsp(ctx context.Context, in *pb.LspRequest) (*pb.LspReply, e
         } else {
             if len(stack) != 0 {
                 current = stack[len(stack) -1]
-                fmt.Printf("LSP: %v\n", current) 
                 reply.Lsp = append(reply.Lsp, system_id_to_str(current.data.(*IsisLsp).LspID[:6]))
                 stack = stack[:len(stack) -1]
                 current = current.right
@@ -175,7 +173,7 @@ func (s *server) GetLsp(ctx context.Context, in *pb.LspRequest) (*pb.LspReply, e
 }
 
 func start_grpc() {
-    lis, err := net.Listen("tcp", GRPC_CFG_SERVER_PORT)
+    lis, err := net.Listen("tcp", strings.Join([]string{":", GRPC_CFG_SERVER_PORT}, ""))
     if err != nil {
         glog.Fatalf("gRPC server failed to start listening: %v", err)
     }
@@ -275,11 +273,11 @@ func main() {
     // Each goroutine blocks on the hello channel waiting for a hello pdu
     // from the recvPdus goroutine
     wg.Add(1) // Just need one of these because none of the goroutines should exit
-    var helloChans, updateChans []chan [READ_BUF_SIZE]byte
+    var helloChans, updateChans []chan []byte
     var sendChans []chan []byte
     for i := 0; i < len(cfg.interfaces); i++ {
-        helloChans = append(helloChans, make(chan [READ_BUF_SIZE]byte, CHAN_BUF_SIZE))
-        updateChans = append(updateChans, make(chan [READ_BUF_SIZE]byte, CHAN_BUF_SIZE))
+        helloChans = append(helloChans, make(chan []byte, CHAN_BUF_SIZE))
+        updateChans = append(updateChans, make(chan []byte, CHAN_BUF_SIZE))
         sendChans = append(sendChans, make(chan []byte, CHAN_BUF_SIZE))
     }
     for i, intf := range cfg.interfaces {

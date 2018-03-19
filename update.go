@@ -7,7 +7,11 @@
 package main
 import (
     "time"
+    "encoding/hex"
 //     "fmt"
+    "unsafe"
+	"golang.org/x/sys/unix"
+    "github.com/vishvananda/netlink"
     "encoding/binary"
     "bytes"
     "sync"
@@ -47,12 +51,12 @@ type IsisLspDB struct {
 }
 
 var LspDB *IsisLspDB
-// var SRMLsps []uint64 // Just the keys of the LSPs which we need to send
 
 func LspDBInit() {
     LspDB = &IsisLspDB{DBLock: sync.Mutex{}, Root: nil}
 }
-func isisUpdateInput(receiveIntf *Intf, update chan [READ_BUF_SIZE]byte) {
+
+func isisUpdateInput(receiveIntf *Intf, update chan []byte) {
     // TODO: Receive update LSPs and flood them along
     // Need to flood it along to every interface, except the one it came from
     // The one it came from is the one we are listening on
@@ -60,6 +64,8 @@ func isisUpdateInput(receiveIntf *Intf, update chan [READ_BUF_SIZE]byte) {
     for {
         lsp := <- update
         receivedLsp := deserializeLsp(lsp[:])
+        glog.V(2).Infof("Got lsp update")
+        glog.V(2).Infof(hex.Dump(lsp[:]))
         // Check if we already have this LSP, if not, then insert it
         // into our own DB an flood it along to all the other interfaces we have
         // TODO: if we already have a copy and the sequence number is newer, overwrite.
@@ -68,17 +74,13 @@ func isisUpdateInput(receiveIntf *Intf, update chan [READ_BUF_SIZE]byte) {
         tmp := AvlSearch(LspDB.Root, receivedLsp.Key)
         if tmp == nil {
             // Don't have this LSP
-            glog.Infof("Before LSP DB (%p):", LspDB.Root)
-            PrintLspDB(LspDB.Root)
             glog.Infof("Adding new lsp %s (%v) to DB", system_id_to_str(receivedLsp.LspID[:6]), receivedLsp.Key)
             LspDB.Root = AvlInsert(LspDB.Root, receivedLsp.Key, receivedLsp)
-            glog.Infof("After LSP DB (%p):", LspDB.Root)
             PrintLspDB(LspDB.Root)
             // Add this new LSP to all interfaces floodStates, and set SRM to true for all of them EXCEPT this interface which we 
             // received it from
             for _, intf := range cfg.interfaces {
-                glog.Infof("Receive intf %s send intf %s", receiveIntf.name, intf.name)
-                glog.Infof("Locking interface %s", intf.name)
+                glog.V(2).Infof("Locking interface %s", intf.name)
                 intf.lock.Lock()
                 if receiveIntf.name == intf.name {
                     // If it is already there, just set SRM to true
@@ -87,7 +89,6 @@ func isisUpdateInput(receiveIntf *Intf, update chan [READ_BUF_SIZE]byte) {
                     } else {
                         intf.lspFloodStates[receivedLsp.Key].SRM = false 
                     }
-                    //intf.lspFloodStates = append(intf.lspFloodStates, &LspFloodState{LspIDKey: receivedLsp.Key, LspID: receivedLsp.LspID, SRM: false, SSN: false})
                 } else {
                     glog.Infof("Flooding new lsp %s out interface: %s", system_id_to_str(receivedLsp.LspID[:6]), intf.name)
                     // If it is already there, just set SRM to true
@@ -96,9 +97,8 @@ func isisUpdateInput(receiveIntf *Intf, update chan [READ_BUF_SIZE]byte) {
                     } else {
                         intf.lspFloodStates[receivedLsp.Key].SRM = true 
                     }
-    //                 intf.lspFloodStates = append(intf.lspFloodStates, &LspFloodState{LspIDKey: receivedLsp.Key, LspID: receivedLsp.LspID, SRM: true, SSN: false})
                 }
-                glog.Infof("Unlocking interface %s", intf.name)
+                glog.V(2).Infof("Unlocking interface %s", intf.name)
                 intf.lock.Unlock()
             }
         }
@@ -108,9 +108,9 @@ func isisUpdateInput(receiveIntf *Intf, update chan [READ_BUF_SIZE]byte) {
 
 func isisUpdate(intf *Intf, send chan []byte) {
     for {
-        glog.Infof("Locking interface %s", intf.name)
+        glog.V(2).Infof("Locking interface %s", intf.name)
         intf.lock.Lock()
-        glog.Info(intf.lspFloodStates)
+        glog.V(1).Info(intf.lspFloodStates)
         glog.Info("LSP DB:")
         PrintLspDB(LspDB.Root)
         glog.Infof("Intf %s Flood States", intf.name)
@@ -135,7 +135,7 @@ func isisUpdate(intf *Intf, send chan []byte) {
                 }
             }
         }
-        glog.Infof("Unlocking interface %s", intf.name)
+        glog.V(2).Infof("Unlocking interface %s", intf.name)
         intf.lock.Unlock()
         time.Sleep(LSP_REFRESH * time.Millisecond)
     }
@@ -147,7 +147,20 @@ func deserializeLsp(raw_bytes []byte) *IsisLsp {
     var lspHeader IsisLspHeader
     binary.Read(buf, binary.BigEndian, &commonHeader)
     binary.Read(buf, binary.BigEndian, &lspHeader)
-    var coreLsp *IsisLspCore = &IsisLspCore{Header: commonHeader, LspHeader: lspHeader}
+    glog.V(2).Info("Binary decode common header:", commonHeader)
+    glog.V(2).Info("Binary decode lsp header:", lspHeader)
+    var coreLsp *IsisLspCore = &IsisLspCore{Header: commonHeader, LspHeader: lspHeader, FirstTlv: nil}
+    var reachTlv IsisTLV 
+    ethernetHeaderSize := 14
+    tlv_offset := ethernetHeaderSize + int(unsafe.Sizeof(commonHeader)) + int(unsafe.Sizeof(lspHeader))
+    if tlv_offset < len(raw_bytes) {
+        reachTlv.tlv_type = raw_bytes[tlv_offset]
+        reachTlv.tlv_length = raw_bytes[tlv_offset + 1]
+        glog.V(2).Infof("TLV code %d received, length %d!\n", raw_bytes[tlv_offset], raw_bytes[tlv_offset + 1])
+        reachTlv.tlv_value = make([]byte, reachTlv.tlv_length)
+        copy(reachTlv.tlv_value, raw_bytes[tlv_offset + 2: tlv_offset + 2 + int(reachTlv.tlv_length)])
+        coreLsp.FirstTlv = &reachTlv
+    }
     var lsp IsisLsp = IsisLsp{Key: LspIDToKey(lspHeader.LspID), LspID: lspHeader.LspID, CoreLsp: coreLsp}
     return &lsp
 }
@@ -156,6 +169,12 @@ func serializeLsp(lsp *IsisLspCore) []byte {
     var buf bytes.Buffer
     binary.Write(&buf, binary.BigEndian, lsp.Header)
     binary.Write(&buf, binary.BigEndian, lsp.LspHeader)
+    if lsp.FirstTlv != nil {
+        glog.V(2).Info("Serializing ip reach tlv", lsp.FirstTlv)
+        binary.Write(&buf, binary.BigEndian, lsp.FirstTlv.tlv_type)
+        binary.Write(&buf, binary.BigEndian, lsp.FirstTlv.tlv_length)
+        binary.Write(&buf, binary.BigEndian, lsp.FirstTlv.tlv_value)
+    }
     return buf.Bytes()
 }
 
@@ -165,7 +184,6 @@ func LspIDToKey(lspID [8]byte) uint64 {
     return key
 }
 
-// func GenerateLocalLsp(intf *Intf, SRM bool) {
 func GenerateLocalLsp() {
     // Triggered on adjacency change
     // Build a local LSP from the information in adjacency database 
@@ -183,17 +201,35 @@ func GenerateLocalLsp() {
                                    Version: 0x01, //
                                    Reserved: 0x00,
                                    Maximum_area_addresses: 0x00} // 0 means default 3 addresses
-//     lspHeader = IsisLspHeader{PduLength [2]byte{0x00},
-//                               RemainingLifetime [2]byte{0x00, 0x00},
-//                               LspID [8]byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, // System id (6 bytes) + 1 byte PSN + 1 byte fragment 
-//                               SequenceNumber [4]byte{0x00, 0x00, 0x00, 0x00},
-//                               Checksum: [2]byte{0x00, 0x00},
-//                               PAttOLType: 0x00}
     lspHeader := IsisLspHeader{}
     lspHeader.LspID = lspID
     core := IsisLspCore{Header: isisPDUHeader,
                         LspHeader: lspHeader,
                         FirstTlv: nil}
+    var ipReachTlv IsisTLV;
+    ipReachTlv.next_tlv = nil
+    ipReachTlv.tlv_type = 128
+    ipReachTlv.tlv_length = 0 // Number of directly connected prefixes * 12 bytes 
+    // For each interface, need to look up the routes associated
+    for _, intf := range cfg.interfaces {
+	    link, _ := netlink.LinkByName(intf.name)	
+        // Just v4 routes for now, filter by AF_INET
+	    routes, _ := netlink.RouteList(link, unix.AF_INET)
+        for _, route := range routes {
+            // Dst will be nil for loopback
+            if route.Dst != nil {
+                // Add this route to the TLV
+                // 4 bytes metric information
+                // 4 bytes for ip prefix
+                // 4 bytes for ip subnet mask
+                ipReachTlv.tlv_value = append(ipReachTlv.tlv_value, route.Dst.IP[:]...)
+                ipReachTlv.tlv_value = append(ipReachTlv.tlv_value, route.Dst.Mask[:]...)
+                ipReachTlv.tlv_value = append(ipReachTlv.tlv_value, 10) // Using metric of 10 always (1 hop)
+                ipReachTlv.tlv_length += 12 
+            }
+        }
+    }
+    core.FirstTlv = &ipReachTlv 
     newLsp.CoreLsp = &core
     newLsp.Key =  LspIDToKey(lspID)
     LspDB.DBLock.Lock()
@@ -208,7 +244,6 @@ func GenerateLocalLsp() {
     }
     // Lsp has been created, need to flood it on all interfaces
     for _, intf := range cfg.interfaces {
-        glog.Infof("Waiting for lock on intf %s", intf.name)
         intf.lock.Lock()
         // Add this LSP to the interfaces flood state 
         // If it is already there, just set SRM to true
@@ -217,7 +252,6 @@ func GenerateLocalLsp() {
         } else {
             intf.lspFloodStates[newLsp.Key].SRM = true 
         }
-        glog.Infof("Unlocking interface %s", intf.name)
         intf.lock.Unlock()
     }
 }
@@ -227,14 +261,18 @@ func PrintLspDB(root *AvlNode) {
         PrintLspDB(root.left)
         if root.data != nil {
             lsp := root.data.(*IsisLsp)
-            glog.Infof("%s -> %v", system_id_to_str(lsp.LspID[:6]), lsp);
+            glog.Infof("%s", system_id_to_str(lsp.LspID[:6]));
+            glog.V(1).Infof("%s -> %v", system_id_to_str(lsp.LspID[:6]), lsp);
+            if lsp.CoreLsp.FirstTlv != nil {
+                glog.V(1).Infof("\tTLV %d", lsp.CoreLsp.FirstTlv.tlv_type);
+            }
         }
         PrintLspDB(root.right)
     }
 }
 
 func PrintLspFloodStates(intf *Intf) {
-    for k, v := range intf.lspFloodStates {
-        glog.Infof("%s --> %v: %v", system_id_to_str(v.LspID[:6]), k, v)
+    for _, v := range intf.lspFloodStates {
+        glog.Infof("%s --> SRM %v", system_id_to_str(v.LspID[:6]), v.SRM)
     }
 }

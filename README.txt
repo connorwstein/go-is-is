@@ -26,10 +26,15 @@ Run the tests:
 docker exec -it test_client bash
 ./run_tests
 
+Logging levels:
+v1 --> detailed database updates
+v2 --> locking and TLV data
+
 DONE:
 - The adjacency test configures the SIDs on both nodes via gRPC, which causes them to start flooding the docker bridge with the multicast mac address and establish adjacencies with any other containers running the is-is program
 - Adjacency establishment for nodes with multiple interfaces
 - Formation of the LSP with no reachability TLV
+
 
 TODO:
 - LSP exchange to build a LSP database on each node
