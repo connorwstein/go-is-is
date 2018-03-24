@@ -7,6 +7,7 @@
 package main
 import (
     "time"
+    "net"
     "encoding/hex"
 //     "fmt"
     "unsafe"
@@ -224,7 +225,8 @@ func GenerateLocalLsp() {
                 // 4 bytes for ip subnet mask
                 ipReachTlv.tlv_value = append(ipReachTlv.tlv_value, route.Dst.IP[:]...)
                 ipReachTlv.tlv_value = append(ipReachTlv.tlv_value, route.Dst.Mask[:]...)
-                ipReachTlv.tlv_value = append(ipReachTlv.tlv_value, 10) // Using metric of 10 always (1 hop)
+                metric := [4]byte{0x00, 0x00, 0x00, 0x0a}
+                ipReachTlv.tlv_value = append(ipReachTlv.tlv_value, metric[:]...) // Using metric of 10 always (1 hop)
                 ipReachTlv.tlv_length += 12 
             }
         }
@@ -264,7 +266,17 @@ func PrintLspDB(root *AvlNode) {
             glog.Infof("%s", system_id_to_str(lsp.LspID[:6]));
             glog.V(1).Infof("%s -> %v", system_id_to_str(lsp.LspID[:6]), lsp);
             if lsp.CoreLsp.FirstTlv != nil {
-                glog.V(1).Infof("\tTLV %d", lsp.CoreLsp.FirstTlv.tlv_type);
+                if lsp.CoreLsp.FirstTlv.tlv_type == 128 {
+                    glog.V(1).Infof("\tTLV %d\n", lsp.CoreLsp.FirstTlv.tlv_type);
+                    glog.V(1).Infof("\tTLV size %d\n", lsp.CoreLsp.FirstTlv.tlv_length);
+                    for i := 0; i < int(lsp.CoreLsp.FirstTlv.tlv_length) / 12; i++ {
+                        var prefix net.IPNet 
+                        prefix.IP = lsp.CoreLsp.FirstTlv.tlv_value[i*12:i*12 + 4]
+                        prefix.Mask = lsp.CoreLsp.FirstTlv.tlv_value[i*12 + 4: i*12 + 8]
+                        metric := lsp.CoreLsp.FirstTlv.tlv_value[i*12 + 8: i*12 + 12]
+                        glog.V(1).Infof("\t\t%s Metric %d\n", prefix.String(), binary.BigEndian.Uint32(metric[:]));
+                    }
+                }
             }
         }
         PrintLspDB(root.right)
