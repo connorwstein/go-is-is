@@ -33,38 +33,42 @@ v2 --> locking and TLV data
 DONE:
 - The adjacency test configures the SIDs on both nodes via gRPC, which causes them to start flooding the docker bridge with the multicast mac address and establish adjacencies with any other containers running the is-is program
 - Adjacency establishment for nodes with multiple interfaces
-- Formation of the LSP with no reachability TLV
-
-
-TODO:
 - LSP exchange to build a LSP database on each node
-    - For this topology the final result on each node should be
-
+    - For this topology the final LSP DB on each node is
         1111.00-00  // Node 1
             TLV 128 Internal Reachability
                 Prefix testnet1 metric 10
+            TLV 2 IS Neighbors 
         1112.00-00 // Node 2 
             TLV 128 Internal Reachability
                 Prefix testnet1 metric 10
                 Prefix testnet2 metric 10 
+            TLV 2 IS Neighbors
         1113.00-00 // Node 3
             TLV 128 Internal Reachability
                 Prefix testnet2 metric 10
-            
-- Run SPF on the LSP database
-    - Given the above LSP DB there is actually only path for each prefix, will need a more complex topology in order to really test the SPF algorithm is working
-    - Something like:
-    
-    node1 -- node2 -- node3    
-      |                 |
-       -----------------
-    
-    In that case there will be a 2 hop path and a 1 hop path in order to reach testnet2 from node1, so SPF should prefer
-    the one hop path.
-- Psuedonode support and DIS election process
+            TLV 2 IS Neighbors
+
+TODO:
+- Using the metrics in TLV 2 and TLV 128, run SPF on the LSP database. SPF runs on a graph where
+nodes are IS-IS instances, adjacencies are edges and directly connected prefixes are leaf nodes.
+All edges have a length/metric of 10. The important thing that we should see is the following on node 1:
+
+    172.19.0.0/16 next hop is node 2 and metric is 20 
+
+That would indicate the metric and next hop calculation is correct. Probably need more complex topology for 
+fully testing SPF though.
+
 - Detect adjacency failures (interface flaps etc.)
-- Add adjacency formation jitter
+- Clean up naming convention
+- More unit tests
+- Scale tests 
+- Performance tests
+
+NICE TO HAVE:
 - Verification of PDU length
 - Crypto auth
 - Add checksums
+- Add adjacency formation jitter
 - Support hostname
+- Psuedonode support and DIS election process

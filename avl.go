@@ -5,9 +5,9 @@ import (
 )
 
 type AvlNode struct {
-	key uint64
-	left *AvlNode 
-	right *AvlNode
+    key uint64
+    left *AvlNode 
+    right *AvlNode
     data interface{}
     height int
 }

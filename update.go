@@ -11,7 +11,7 @@ import (
     "encoding/hex"
 //     "fmt"
     "unsafe"
-	"golang.org/x/sys/unix"
+    "golang.org/x/sys/unix"
     "github.com/vishvananda/netlink"
     "encoding/binary"
     "bytes"
@@ -141,6 +141,7 @@ func isisUpdate(intf *Intf, send chan []byte) {
         time.Sleep(LSP_REFRESH * time.Millisecond)
     }
 }
+
 func deserializeLsp(raw_bytes []byte) *IsisLsp {
     // Given the raw buffer received, build an IsisLsp structure
     buf := bytes.NewBuffer(raw_bytes[14:])
@@ -151,16 +152,30 @@ func deserializeLsp(raw_bytes []byte) *IsisLsp {
     glog.V(2).Info("Binary decode common header:", commonHeader)
     glog.V(2).Info("Binary decode lsp header:", lspHeader)
     var coreLsp *IsisLspCore = &IsisLspCore{Header: commonHeader, LspHeader: lspHeader, FirstTlv: nil}
-    var reachTlv IsisTLV 
     ethernetHeaderSize := 14
     tlv_offset := ethernetHeaderSize + int(unsafe.Sizeof(commonHeader)) + int(unsafe.Sizeof(lspHeader))
-    if tlv_offset < len(raw_bytes) {
-        reachTlv.tlv_type = raw_bytes[tlv_offset]
-        reachTlv.tlv_length = raw_bytes[tlv_offset + 1]
+    // Check if the tlv offset is strictly less than the raw bytes, if it is then there must be TLVs present
+    // keep reading until remaining tlv data is 0, building up a linked list of the TLVs as we go
+    remainingTlvBytes := len(raw_bytes) - tlv_offset
+    var curr *IsisTLV
+    first := true
+    for remainingTlvBytes > 0 {
+        var currentTlv IsisTLV 
+        currentTlv.tlv_type = raw_bytes[tlv_offset]
+        currentTlv.tlv_length = raw_bytes[tlv_offset + 1]
         glog.V(2).Infof("TLV code %d received, length %d!\n", raw_bytes[tlv_offset], raw_bytes[tlv_offset + 1])
-        reachTlv.tlv_value = make([]byte, reachTlv.tlv_length)
-        copy(reachTlv.tlv_value, raw_bytes[tlv_offset + 2: tlv_offset + 2 + int(reachTlv.tlv_length)])
-        coreLsp.FirstTlv = &reachTlv
+        currentTlv.tlv_value = make([]byte, currentTlv.tlv_length)
+        copy(currentTlv.tlv_value, raw_bytes[tlv_offset + 2: tlv_offset + 2 + int(currentTlv.tlv_length)])
+        remainingTlvBytes -= (int(currentTlv.tlv_length) + 2) // + 2 for type and length
+        tlv_offset += int(currentTlv.tlv_length) + 2
+        if first {
+            coreLsp.FirstTlv = &currentTlv
+            curr = coreLsp.FirstTlv
+            first = false
+        } else {
+            curr.next_tlv = &currentTlv
+            curr = curr.next_tlv
+        }
     }
     var lsp IsisLsp = IsisLsp{Key: LspIDToKey(lspHeader.LspID), LspID: lspHeader.LspID, CoreLsp: coreLsp}
     return &lsp
@@ -170,15 +185,16 @@ func serializeLsp(lsp *IsisLspCore) []byte {
     var buf bytes.Buffer
     binary.Write(&buf, binary.BigEndian, lsp.Header)
     binary.Write(&buf, binary.BigEndian, lsp.LspHeader)
-    if lsp.FirstTlv != nil {
-        glog.V(2).Info("Serializing ip reach tlv", lsp.FirstTlv)
-        binary.Write(&buf, binary.BigEndian, lsp.FirstTlv.tlv_type)
-        binary.Write(&buf, binary.BigEndian, lsp.FirstTlv.tlv_length)
-        binary.Write(&buf, binary.BigEndian, lsp.FirstTlv.tlv_value)
-    }
+    tlv := lsp.FirstTlv
+    for tlv != nil {
+        glog.V(2).Info("Serializing tlv:", tlv.tlv_type)
+        binary.Write(&buf, binary.BigEndian, tlv.tlv_type)
+        binary.Write(&buf, binary.BigEndian, tlv.tlv_length)
+        binary.Write(&buf, binary.BigEndian, tlv.tlv_value)
+        tlv = tlv.next_tlv
+    } 
     return buf.Bytes()
 }
-
 
 func LspIDToKey(lspID [8]byte) uint64 {
     var key uint64 = binary.BigEndian.Uint64(lspID[:]) // Keyed on the LSP ID's integer value
@@ -231,6 +247,25 @@ func GenerateLocalLsp() {
             }
         }
     }
+    // Also include the adjacency tlvs (assuming metric of 10 always)
+    var neighborsTlv IsisTLV;
+    neighborsTlv.next_tlv = nil
+    neighborsTlv.tlv_type = 2
+    neighborsTlv.tlv_length = 1  // Start at 1 to include virtual byte flag
+    var virtualByteFlag byte = 0x00;
+    var pseudoNodeId byte = 0x00;
+    neighborsTlv.tlv_value = append(neighborsTlv.tlv_value, virtualByteFlag)
+    // Loop though the interfaces looking for adjacenies to append
+    for _, intf := range cfg.interfaces {
+        // Tlv value is 1 virtual byte flag and then n multiples of 4 byte metric and 6 byte system id + 1 byte pseudo-node id
+        // Set pseudo-node id to 0 for now
+        metric := [4]byte{0x00, 0x00, 0x00, 0x0a}
+        neighborsTlv.tlv_value = append(neighborsTlv.tlv_value, metric[:]...)
+        neighborsTlv.tlv_value = append(neighborsTlv.tlv_value, intf.adj.neighbor_system_id[:]...)
+        neighborsTlv.tlv_value = append(neighborsTlv.tlv_value, pseudoNodeId)
+        neighborsTlv.tlv_length += 11 
+    }
+    ipReachTlv.next_tlv = &neighborsTlv 
     core.FirstTlv = &ipReachTlv 
     newLsp.CoreLsp = &core
     newLsp.Key =  LspIDToKey(lspID)
@@ -265,10 +300,11 @@ func PrintLspDB(root *AvlNode) {
             lsp := root.data.(*IsisLsp)
             glog.Infof("%s", system_id_to_str(lsp.LspID[:6]));
             glog.V(1).Infof("%s -> %v", system_id_to_str(lsp.LspID[:6]), lsp);
-            if lsp.CoreLsp.FirstTlv != nil {
-                if lsp.CoreLsp.FirstTlv.tlv_type == 128 {
-                    glog.V(1).Infof("\tTLV %d\n", lsp.CoreLsp.FirstTlv.tlv_type);
-                    glog.V(1).Infof("\tTLV size %d\n", lsp.CoreLsp.FirstTlv.tlv_length);
+            var curr *IsisTLV = lsp.CoreLsp.FirstTlv
+            for curr != nil {
+                glog.V(1).Infof("\tTLV %d\n", curr.tlv_type);
+                glog.V(1).Infof("\tTLV size %d\n", curr.tlv_length);
+                if curr.tlv_type == 128 {
                     for i := 0; i < int(lsp.CoreLsp.FirstTlv.tlv_length) / 12; i++ {
                         var prefix net.IPNet 
                         prefix.IP = lsp.CoreLsp.FirstTlv.tlv_value[i*12:i*12 + 4]
@@ -277,7 +313,8 @@ func PrintLspDB(root *AvlNode) {
                         glog.V(1).Infof("\t\t%s Metric %d\n", prefix.String(), binary.BigEndian.Uint32(metric[:]));
                     }
                 }
-            }
+                curr = curr.next_tlv
+            }            
         }
         PrintLspDB(root.right)
     }

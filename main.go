@@ -37,14 +37,14 @@ type Config struct {
     // Keep adjacencies and interfaces separate in case we want to do multiple
     // IS-IS levels, in which case there would be a level-1 and level-2 adjacency
     // each pointing to the same interface
-	interfaces []*Intf // Slice of local interfaces
+    interfaces []*Intf // Slice of local interfaces
 }
 
 type Intf struct {
     adj *Adjacency
-	name string
-	prefix net.IP
-	mask net.IPMask
+    name string
+    prefix net.IP
+    mask net.IPMask
     // Each interface has an SRM and SSN flag per LSP
     // Map where the keys are the LspIDs
     lock sync.Mutex
@@ -95,7 +95,6 @@ func getGID() uint64 {
     n, _ := strconv.ParseUint(string(b), 10, 64)
     return n
 }
-
 
 func cleanup() {
     fmt.Println("cleanup")
@@ -192,8 +191,8 @@ func initInterfaces() {
     // with the interface information and a NEW adjacency per
     // interface.
     ifaces, err := net.Interfaces()
-	cfg.interfaces = make([]*Intf, len(ifaces) - 1)
-	index := 0
+    cfg.interfaces = make([]*Intf, len(ifaces) - 1)
+    index := 0
     if err != nil {
         glog.Errorf("initInterfaces: %+v\n", err.Error())
         return
@@ -201,9 +200,9 @@ func initInterfaces() {
 
     for _, i := range ifaces {
         // Ignore loopback interfaces
-		if i.Name == "lo" {
-			continue
-		}
+        if i.Name == "lo" {
+            continue
+        }
         addrs, err := i.Addrs()
         if err != nil {
             glog.Errorf("initInterfaces: %+v\n", err.Error())
@@ -233,8 +232,8 @@ func initInterfaces() {
                     // TODO: ipv6 support
                     glog.Info("IPV6 interface ", i.Name, " not supported")
                 }
-			default:
-				glog.Errorf("Not an ip address %+v\n", v)
+            default:
+                glog.Errorf("Not an ip address %+v\n", v)
             }
         }
     }
@@ -259,15 +258,16 @@ func main() {
 
     // Determine the interfaces available on the container
     // and add that to the configuration
-	initInterfaces()
+    initInterfaces()
     ethernetInit()
     LspDBInit()
 
     for _, intf := range cfg.interfaces {
         ethernetIntfInit(intf.name) // Creates send/recv raw sockets
     }
-	// Start a couple go routines to communicate with other nodes
-	// to establish adjacencies. Each go routine can run
+
+    // Start a couple go routines to communicate with other nodes
+    // to establish adjacencies. Each go routine can run
     // totally in parallel to establish adjacencies on each
     // interface
     // Each goroutine blocks on the hello channel waiting for a hello pdu
