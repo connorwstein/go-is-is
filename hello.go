@@ -200,6 +200,11 @@ func isisHelloRecv(intf *Intf, helloChan chan []byte, sendChan chan []byte) {
         // If we receive a hello with our own mac in the neighbor tlv
         // we mark the adjacency as UP
         glog.Infof("Got hello from %v\n", system_id_to_str(rsp.lan_hello_pdu.LanHelloHeader.SourceSystemId[:]))
+        // This should not be our own system id, drop it if it is
+        if system_id_to_str(rsp.lan_hello_pdu.LanHelloHeader.SourceSystemId[:]) == cfg.sid {
+            glog.Infof("Got hello from our own system ID, dropping\n")
+            continue
+        }
         // even if our adjacency is up, we need to respond to other folks
         if rsp.lan_hello_pdu.FirstTlv == nil {
             // No TLVs yet in this hello packet so we need to add in the IS neighbors tlv

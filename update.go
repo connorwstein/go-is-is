@@ -255,13 +255,18 @@ func GenerateLocalLsp() {
     var virtualByteFlag byte = 0x00;
     var pseudoNodeId byte = 0x00;
     neighborsTlv.tlv_value = append(neighborsTlv.tlv_value, virtualByteFlag)
-    // Loop though the interfaces looking for adjacenies to append
+    // Loop though the interfaces looking for adjacencies to append
     for _, intf := range cfg.interfaces {
         // Tlv value is 1 virtual byte flag and then n multiples of 4 byte metric and 6 byte system id + 1 byte pseudo-node id
         // Set pseudo-node id to 0 for now
+        if intf.adj.state != "UP" {
+            // Only send the adjacencies that we actually have
+            continue
+        }
         metric := [4]byte{0x00, 0x00, 0x00, 0x0a}
         neighborsTlv.tlv_value = append(neighborsTlv.tlv_value, metric[:]...)
         neighborsTlv.tlv_value = append(neighborsTlv.tlv_value, intf.adj.neighbor_system_id[:]...)
+        glog.Infof("adding neighbor system id %s", system_id_to_str(intf.adj.neighbor_system_id[:]))
         neighborsTlv.tlv_value = append(neighborsTlv.tlv_value, pseudoNodeId)
         neighborsTlv.tlv_length += 11 
     }
@@ -305,12 +310,22 @@ func PrintLspDB(root *AvlNode) {
                 glog.V(1).Infof("\tTLV %d\n", curr.tlv_type);
                 glog.V(1).Infof("\tTLV size %d\n", curr.tlv_length);
                 if curr.tlv_type == 128 {
-                    for i := 0; i < int(lsp.CoreLsp.FirstTlv.tlv_length) / 12; i++ {
+                    // This is a external reachability tlv
+                    // TODO: fix hard coding here
+                    for i := 0; i < int(curr.tlv_length) / 12; i++ {
                         var prefix net.IPNet 
-                        prefix.IP = lsp.CoreLsp.FirstTlv.tlv_value[i*12:i*12 + 4]
-                        prefix.Mask = lsp.CoreLsp.FirstTlv.tlv_value[i*12 + 4: i*12 + 8]
-                        metric := lsp.CoreLsp.FirstTlv.tlv_value[i*12 + 8: i*12 + 12]
+                        prefix.IP = curr.tlv_value[i*12:i*12 + 4]
+                        prefix.Mask = curr.tlv_value[i*12 + 4: i*12 + 8]
+                        metric := curr.tlv_value[i*12 + 8: i*12 + 12]
                         glog.V(1).Infof("\t\t%s Metric %d\n", prefix.String(), binary.BigEndian.Uint32(metric[:]));
+                    }
+                } else if curr.tlv_type == 2 {
+                    // This is a neighbors tlv, its length - 1 (to exclude the first virtualByteFlag) will be a multiple of 11
+                    for i := 0; i < int(curr.tlv_length - 1)  / 11; i++ {
+                        // Print out the neighbor system ids and metric 
+                        metric := curr.tlv_value[i*11 + 4]
+                        systemID := curr.tlv_value[(i*11 + 1 + 4):(i*11 + 1 + 4 + 6)]
+                        glog.V(1).Infof("\t\t%s Metric %d\n", system_id_to_str(systemID), metric)
                     }
                 }
                 curr = curr.next_tlv
