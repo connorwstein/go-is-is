@@ -4,18 +4,16 @@
 package main
 
 import (
-//     "fmt"
     "bytes"
     "net"
     "syscall"
-	"unsafe"
+    "unsafe"
     "encoding/binary"
     "github.com/golang/glog"
-//     "encoding/hex"
 )
 
 const (
-	PF_PACKET = 17
+    PF_PACKET = 17
     ETH_P_ALL = 0x0003
     READ_BUF_SIZE = 100
 )
@@ -166,10 +164,10 @@ func ethernetIntfInit(ifname string) {
     if send == nil || err != nil {
         glog.Error("Failed to open raw send socket", err)
     }
-	recv, err := NewRawSockRecv(ifname)
-	if recv == nil || err != nil {
-		glog.Error("Failed to open raw recv socket", err)
-	}
+    recv, err := NewRawSockRecv(ifname)
+    if recv == nil || err != nil {
+        glog.Error("Failed to open raw recv socket", err)
+    }
     var value [2]*RawSock
     value[0] = send
     value[1] = recv

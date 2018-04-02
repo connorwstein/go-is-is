@@ -6,6 +6,8 @@ import (
     "fmt"
     "sync"
     "bytes"
+    "golang.org/x/sys/unix"
+    "github.com/vishvananda/netlink"
     "os"
     "os/signal"
     "syscall"
@@ -45,6 +47,7 @@ type Intf struct {
     name string
     prefix net.IP
     mask net.IPMask
+    routes []*net.IPNet
     // Each interface has an SRM and SSN flag per LSP
     // Map where the keys are the LspIDs
     lock sync.Mutex
@@ -227,6 +230,18 @@ func initInterfaces() {
                     // Initialize the flood states slice on that interface
                     // Initially an empty slice, will grow as lsps are learned/created
                     cfg.interfaces[index].lspFloodStates = make(map[uint64]*LspFloodState)
+                    
+                    cfg.interfaces[index].routes = make([]*net.IPNet, 0)
+                    // Obtain the routes for that interface
+                    link, _ := netlink.LinkByName(i.Name)	
+                    // Just v4 routes for now, filter by AF_INET
+                    routes, _ := netlink.RouteList(link, unix.AF_INET)
+                    for _, route := range routes {
+                        // IP prefix type: route.Dst
+                        if route.Dst != nil {
+                            cfg.interfaces[index].routes = append(cfg.interfaces[index].routes, route.Dst)
+                        }
+                    }
                     index++
                 } else {
                     // TODO: ipv6 support
@@ -239,13 +254,16 @@ func initInterfaces() {
     }
 }
 
+func initConfig() {
+    cfg = &Config{lock: sync.Mutex{}, sid: ""}
+}
+
 func main() {
     flag.Parse()
     glog.Info("Booting IS-IS node...")
 
     // This is a special multicast mac address
     l1_multicast = []byte{0x01, 0x80, 0xc2, 0x00, 0x00, 0x14}
-    cfg = &Config{lock: sync.Mutex{}, sid: ""}
 
     // Exit go routine
     c := make(chan os.Signal, 2)
@@ -258,6 +276,7 @@ func main() {
 
     // Determine the interfaces available on the container
     // and add that to the configuration
+    initConfig()
     initInterfaces()
     ethernetInit()
     UpdateDBInit()

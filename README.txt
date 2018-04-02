@@ -1,11 +1,13 @@
-This project is an implementation of the major aspects of the IS-IS protocol. There may be slight deviations from the actual RFC as it is more of an exploration of golang rather than anything like a piece of production software.
+This project is an implementation of the major aspects of the IS-IS protocol. There may be slight deviations from the actual RFC.
 
-Basically the goals of this project are to create a routing protocol implementation which is:
-- Actually fully tested
+The goals of this project are to create a routing protocol implementation which is:
+- Designed with TDD - this is probably the most important 
 - Leverages golang for concurrency primitives
 - Designed with telemetry in mind from the beginning 
 - Extremely easy to test at scale
-- Strictly interfaced with programmtically - no cli 
+- Strictly interfaced with programmatically - no cli 
+
+Most of these goals are motivated by observing the shortcomings of commercial implementations.
 
 Traditional implementations use only a handful of threads as each one eats up something on the order of a few MB of memory. In C, having a thread per interface is out of the question because large routers can have thousands of interfaces which would mean GB of memory, but in golang it should be possible to have a goroutine per interface and not use a ton of memory. 
 
@@ -63,6 +65,7 @@ DONE:
 
 TODO:
 - Might be able to convert the structs to use byte slices for everything rather than fixed sizes
+- Interface information should probably be a map not a list
 - Using the metrics in TLV 2 and TLV 128, run SPF on the LSP database. SPF runs on a graph where
 nodes are IS-IS instances, adjacencies are edges and directly connected prefixes are leaf nodes.
 All edges have a length/metric of 10. The important thing that we should see is the following on node 1:
@@ -88,3 +91,6 @@ NICE TO HAVE:
 - Crypto auth
 - Add checksums
 - Support hostname
+
+Notes
+- It is much easier to test functionality if it is done in a functional style and does not rely on tons of global mutating state. Keep this global mutating state to a minimum and then whatever is absolutely required should be tested with system_test.go

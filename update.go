@@ -10,8 +10,6 @@ import (
     "net"
     "encoding/hex"
     "unsafe"
-    "golang.org/x/sys/unix"
-    "github.com/vishvananda/netlink"
     "encoding/binary"
     "bytes"
     "sync"
@@ -210,30 +208,44 @@ func serializeLsp(lsp *IsisLspCore) []byte {
     return buf.Bytes()
 }
 
+func SystemIDToKey(systemID string) uint64 {
+    var lspID [8]byte
+    bytes := system_id_to_bytes(systemID)
+    copy(lspID[:], bytes[:])
+    return LspIDToKey(lspID)
+}
+
+
 func LspIDToKey(lspID [8]byte) uint64 {
     var key uint64 = binary.BigEndian.Uint64(lspID[:]) // Keyed on the LSP ID's integer value
     return key
 }
 
-func getIPReachTLV() *IsisTLV {
+func SystemIDToLspID(systemID string) [8]byte {
+    var lspID [8]byte
+    bytes := system_id_to_bytes(systemID)
+    copy(lspID[:], bytes[:])
+    return lspID
+}
+
+func getIPReachTLV(interfaces []*Intf) *IsisTLV {
+    // Doesn't handle duplicate prefixes reachable via different interfaces
     var ipReachTlv IsisTLV;
     ipReachTlv.next_tlv = nil
     ipReachTlv.tlv_type = 128
     ipReachTlv.tlv_length = 0 // Number of directly connected prefixes * 12 bytes 
     // For each interface, need to look up the routes associated
-    for _, intf := range cfg.interfaces {
-	    link, _ := netlink.LinkByName(intf.name)	
-        // Just v4 routes for now, filter by AF_INET
-	    routes, _ := netlink.RouteList(link, unix.AF_INET)
-        for _, route := range routes {
+    for _, intf := range interfaces {
+        // Routes are already saved in each interface struct 
+        for _, route := range intf.routes {
             // Dst will be nil for loopback
-            if route.Dst != nil {
+            if route != nil {
                 // Add this route to the TLV
                 // 4 bytes metric information
                 // 4 bytes for ip prefix
                 // 4 bytes for ip subnet mask
-                ipReachTlv.tlv_value = append(ipReachTlv.tlv_value, route.Dst.IP[:]...)
-                ipReachTlv.tlv_value = append(ipReachTlv.tlv_value, route.Dst.Mask[:]...)
+                ipReachTlv.tlv_value = append(ipReachTlv.tlv_value, route.IP[:]...)
+                ipReachTlv.tlv_value = append(ipReachTlv.tlv_value, route.Mask[:]...)
                 metric := [4]byte{0x00, 0x00, 0x00, 0x0a}
                 ipReachTlv.tlv_value = append(ipReachTlv.tlv_value, metric[:]...) // Using metric of 10 always (1 hop)
                 ipReachTlv.tlv_length += 12 
@@ -243,7 +255,8 @@ func getIPReachTLV() *IsisTLV {
     return &ipReachTlv
 }
 
-func getNeighborTLV() *IsisTLV {
+
+func getNeighborTLV(interfaces []*Intf) *IsisTLV {
     var neighborsTlv IsisTLV;
     neighborsTlv.next_tlv = nil
     neighborsTlv.tlv_type = 2
@@ -252,7 +265,7 @@ func getNeighborTLV() *IsisTLV {
     var pseudoNodeId byte = 0x00;
     neighborsTlv.tlv_value = append(neighborsTlv.tlv_value, virtualByteFlag)
     // Loop though the interfaces looking for adjacencies to append
-    for _, intf := range cfg.interfaces {
+    for _, intf := range interfaces {
         // Tlv value is 1 virtual byte flag and then n multiples of 4 byte metric and 6 byte system id + 1 byte pseudo-node id
         // Set pseudo-node id to 0 for now
         if intf.adj.state != "UP" {
@@ -271,10 +284,7 @@ func getNeighborTLV() *IsisTLV {
 
 func buildEmptyLSP(sequenceNumber uint32, sourceSystemID string) *IsisLsp {
     var newLsp IsisLsp 
-    var lspID [8]byte
-    bytes := system_id_to_bytes(sourceSystemID)
-    copy(lspID[:], bytes[:])
-    newLsp.LspID = lspID 
+    newLsp.LspID = SystemIDToLspID(sourceSystemID)
     isisPDUHeader := IsisPDUHeader{Intra_domain_routeing_protocol_discriminator: 0x83,
                                    Pdu_length: 0x00,
                                    Protocol_id: 0x01,
@@ -286,12 +296,12 @@ func buildEmptyLSP(sequenceNumber uint32, sourceSystemID string) *IsisLsp {
     var seq [4]byte
     binary.BigEndian.PutUint32(seq[:], sequenceNumber)
     lspHeader := IsisLspHeader{SequenceNumber: seq}
-    lspHeader.LspID = lspID
+    lspHeader.LspID = newLsp.LspID
     core := IsisLspCore{Header: isisPDUHeader,
                         LspHeader: lspHeader,
                         FirstTlv: nil}
     newLsp.CoreLsp = &core
-    newLsp.Key =  LspIDToKey(lspID)
+    newLsp.Key =  LspIDToKey(newLsp.LspID)
     return &newLsp
 }
 
@@ -304,8 +314,8 @@ func GenerateLocalLsp() {
     sequenceNumber += 1
     newLsp := buildEmptyLSP(sequenceNumber, cfg.sid)
     // Also include the adjacency tlvs (assuming metric of 10 always)
-    reachTLV := getIPReachTLV()
-    neighborTLV := getNeighborTLV()
+    reachTLV := getIPReachTLV(cfg.interfaces)
+    neighborTLV := getNeighborTLV(cfg.interfaces)
     reachTLV.next_tlv = neighborTLV
     newLsp.CoreLsp.FirstTlv = reachTLV 
     UpdateDB.DBLock.Lock()
