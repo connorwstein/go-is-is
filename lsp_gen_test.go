@@ -13,12 +13,12 @@ func TestLocalLspGen(t *testing.T) {
     adj := Adjacency{state: "UP", neighbor_system_id: []byte{0x11, 0x11, 0x11, 0x11, 0x11, 0x11}}
     initInterfaces()
     cfg.interfaces[0].adj = &adj
-    LspDBInit()
+    UpdateDBInit()
     GenerateLocalLsp()
 
     // Check whether it is in the LspDB 
     testLspID := [8]byte{0x11, 0x11, 0x11, 0x11, 0x11, 0x12, 0x00, 0x00}
-    tmp := AvlSearch(LspDB.Root, binary.BigEndian.Uint64(testLspID[:]))
+    tmp := AvlSearch(UpdateDB.Root, binary.BigEndian.Uint64(testLspID[:]))
     lsp := tmp.(*IsisLsp)
     fmt.Println(cfg.interfaces[0].lspFloodStates[0]) 
     fmt.Println(lsp) 

@@ -1,4 +1,11 @@
-This project is an implementation of a subset of the IS-IS protocol. There may be slight deviations from the actual RFC as it is more of an exploration of golang rather than anything like a piece of production software.
+This project is an implementation of the major aspects of the IS-IS protocol. There may be slight deviations from the actual RFC as it is more of an exploration of golang rather than anything like a piece of production software.
+
+Basically the goals of this project are to create a routing protocol implementation which is:
+- Actually fully tested
+- Leverages golang for concurrency primitives
+- Designed with telemetry in mind from the beginning 
+- Extremely easy to test at scale
+- Strictly interfaced with programmtically - no cli 
 
 Traditional implementations use only a handful of threads as each one eats up something on the order of a few MB of memory. In C, having a thread per interface is out of the question because large routers can have thousands of interfaces which would mean GB of memory, but in golang it should be possible to have a goroutine per interface and not use a ton of memory. 
 
@@ -52,7 +59,7 @@ DONE:
                 Prefix testnet2 metric 10
             TLV 2 IS Neighbors
                 1112.00-00
-- Need to support sequence numbers of LSPs to overwrite if we get a newer sequence number. Curren't the node2 will form an adjacency with either node 1 or 3 first, generate and send out its LSPs. Then it will do that again once the second adjacency forms, but node1 and 3 will not update their databases when they get this new LSP, as they already have an LSP from node2.
+- Need to support sequence numbers of LSPs to overwrite if we get a newer sequence number. Currently node2 will form an adjacency with either node 1 or 3 first, generate and send out its LSP. Then it will do that again once the second adjacency forms, but node1 and 3 will not update their databases when they get this new LSP, as they already have an LSP from node2.
 
 TODO:
 - Might be able to convert the structs to use byte slices for everything rather than fixed sizes
@@ -64,7 +71,7 @@ All edges have a length/metric of 10. The important thing that we should see is 
 
 That would indicate the metric and next hop calculation is correct. Probably need more complex topology for 
 fully testing SPF though.
-
+- Replace sleeps with timers
 - Detect adjacency failures (interface flaps etc.)
 - Clean up naming convention
 - More unit tests

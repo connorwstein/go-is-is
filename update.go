@@ -39,22 +39,22 @@ type IsisLspCore struct {
 
 type IsisLsp struct {
     // Wrapper struct around the core
-    Key uint64 // Used for key in the LspDB
+    Key uint64 // Used for key in the UpdateDB
     LspID [8]byte
     CoreLsp *IsisLspCore
 }
 
-type IsisLspDB struct {
+type IsisDB struct {
     DBLock sync.Mutex
     Root *AvlNode 
     // May want to add more information here
 }
 
-var LspDB *IsisLspDB
+var UpdateDB *IsisDB
 var sequenceNumber uint32
 
-func LspDBInit() {
-    LspDB = &IsisLspDB{DBLock: sync.Mutex{}, Root: nil}
+func UpdateDBInit() {
+    UpdateDB = &IsisDB{DBLock: sync.Mutex{}, Root: nil}
 }
 
 func floodNewLsp(receiveIntf *Intf, receivedLsp *IsisLsp) {
@@ -98,13 +98,13 @@ func isisUpdateInput(receiveIntf *Intf, update chan []byte) {
         // into our own DB an flood it along to all the other interfaces we have
         // TODO: if we already have a copy and the sequence number is newer, overwrite.
         // if we have a newer copy, send the newer copy back to the source 
-        LspDB.DBLock.Lock()
-        tmp := AvlSearch(LspDB.Root, receivedLsp.Key)
+        UpdateDB.DBLock.Lock()
+        tmp := AvlSearch(UpdateDB.Root, receivedLsp.Key)
         if tmp == nil {
             // Don't have this LSP so lets add it
             glog.Infof("Adding new lsp %s (%v) to DB", system_id_to_str(receivedLsp.LspID[:6]), receivedLsp.Key)
-            LspDB.Root = AvlInsert(LspDB.Root, receivedLsp.Key, receivedLsp, false)
-            PrintLspDB(LspDB.Root)
+            UpdateDB.Root = AvlInsert(UpdateDB.Root, receivedLsp.Key, receivedLsp, false)
+            PrintUpdateDB(UpdateDB.Root)
             floodNewLsp(receiveIntf, receivedLsp)
         } else {
             // We do have this LSP, check if the sequence number is newer than the current version we have if it is then update
@@ -112,12 +112,12 @@ func isisUpdateInput(receiveIntf *Intf, update chan []byte) {
             if binary.BigEndian.Uint32(lsp.CoreLsp.LspHeader.SequenceNumber[:]) < binary.BigEndian.Uint32(receivedLsp.CoreLsp.LspHeader.SequenceNumber[:]) {
                 // Received one is newer, update and flood
                 glog.Infof("Overwriting new lsp %s (%v) to DB", system_id_to_str(receivedLsp.LspID[:6]), receivedLsp.Key)
-                LspDB.Root = AvlInsert(LspDB.Root, receivedLsp.Key, receivedLsp, true)
-                PrintLspDB(LspDB.Root)
+                UpdateDB.Root = AvlInsert(UpdateDB.Root, receivedLsp.Key, receivedLsp, true)
+                PrintUpdateDB(UpdateDB.Root)
                 floodNewLsp(receiveIntf, receivedLsp)
             }
         }
-        LspDB.DBLock.Unlock()
+        UpdateDB.DBLock.Unlock()
     }
 }
 
@@ -127,7 +127,7 @@ func isisUpdate(intf *Intf, send chan []byte) {
         intf.lock.Lock()
         glog.V(1).Info(intf.lspFloodStates)
         glog.Info("LSP DB:")
-        PrintLspDB(LspDB.Root)
+        PrintUpdateDB(UpdateDB.Root)
         glog.Infof("Intf %s Flood States", intf.name)
         PrintLspFloodStates(intf)
         // Check for SRM == true on this interface, if there
@@ -135,11 +135,11 @@ func isisUpdate(intf *Intf, send chan []byte) {
         for _, lspFloodState := range intf.lspFloodStates {
             // Need the adjacency to be UP as well
             if lspFloodState.SRM && intf.adj.state == "UP"{
-                tmp := AvlSearch(LspDB.Root, lspFloodState.LspIDKey)
+                tmp := AvlSearch(UpdateDB.Root, lspFloodState.LspIDKey)
                 if tmp == nil {
                     glog.Errorf("Unable to find %s (%v) in lsp db", system_id_to_str(lspFloodState.LspID[:6]), lspFloodState.LspIDKey)
                     glog.Errorf("Lsp DB:")
-                    PrintLspDB(LspDB.Root)
+                    PrintUpdateDB(UpdateDB.Root)
                 } else {
                     lsp := tmp.(*IsisLsp)
                     // Send it out that particular interface
@@ -215,33 +215,7 @@ func LspIDToKey(lspID [8]byte) uint64 {
     return key
 }
 
-func GenerateLocalLsp() {
-    // Triggered on adjacency change
-    // Build a local LSP from the information in adjacency database 
-    // Leaving fragment and PSN set to zero for now
-    // Sequence number is incremented every time this function is called
-    var newLsp IsisLsp 
-    var lspID [8]byte
-    bytes := system_id_to_bytes(cfg.sid)
-    copy(lspID[:], bytes[:])
-    newLsp.LspID = lspID 
-    isisPDUHeader := IsisPDUHeader{Intra_domain_routeing_protocol_discriminator: 0x83,
-                                   Pdu_length: 0x00,
-                                   Protocol_id: 0x01,
-                                   System_id_length: 0x00, // 0 means default 6 bytes
-                                   Pdu_type: 0x12, // l1 LSP
-                                   Version: 0x01, //
-                                   Reserved: 0x00,
-                                   Maximum_area_addresses: 0x00} // 0 means default 3 addresses
-    // TODO: See if there is a better way to do this --> probably need to move everything to use byte slices, these fixed arrays are a pain in the ass
-    sequenceNumber += 1
-    var seq [4]byte
-    binary.BigEndian.PutUint32(seq[:], sequenceNumber)
-    lspHeader := IsisLspHeader{SequenceNumber: seq}
-    lspHeader.LspID = lspID
-    core := IsisLspCore{Header: isisPDUHeader,
-                        LspHeader: lspHeader,
-                        FirstTlv: nil}
+func getIPReachTLV() *IsisTLV {
     var ipReachTlv IsisTLV;
     ipReachTlv.next_tlv = nil
     ipReachTlv.tlv_type = 128
@@ -266,7 +240,10 @@ func GenerateLocalLsp() {
             }
         }
     }
-    // Also include the adjacency tlvs (assuming metric of 10 always)
+    return &ipReachTlv
+}
+
+func getNeighborTLV() *IsisTLV {
     var neighborsTlv IsisTLV;
     neighborsTlv.next_tlv = nil
     neighborsTlv.tlv_type = 2
@@ -289,14 +266,52 @@ func GenerateLocalLsp() {
         neighborsTlv.tlv_value = append(neighborsTlv.tlv_value, pseudoNodeId)
         neighborsTlv.tlv_length += 11 
     }
-    ipReachTlv.next_tlv = &neighborsTlv 
-    core.FirstTlv = &ipReachTlv 
+    return &neighborsTlv
+}
+
+func buildEmptyLSP(sequenceNumber uint32, sourceSystemID string) *IsisLsp {
+    var newLsp IsisLsp 
+    var lspID [8]byte
+    bytes := system_id_to_bytes(sourceSystemID)
+    copy(lspID[:], bytes[:])
+    newLsp.LspID = lspID 
+    isisPDUHeader := IsisPDUHeader{Intra_domain_routeing_protocol_discriminator: 0x83,
+                                   Pdu_length: 0x00,
+                                   Protocol_id: 0x01,
+                                   System_id_length: 0x00, // 0 means default 6 bytes
+                                   Pdu_type: 0x12, // l1 LSP
+                                   Version: 0x01, //
+                                   Reserved: 0x00,
+                                   Maximum_area_addresses: 0x00} // 0 means default 3 addresses
+    var seq [4]byte
+    binary.BigEndian.PutUint32(seq[:], sequenceNumber)
+    lspHeader := IsisLspHeader{SequenceNumber: seq}
+    lspHeader.LspID = lspID
+    core := IsisLspCore{Header: isisPDUHeader,
+                        LspHeader: lspHeader,
+                        FirstTlv: nil}
     newLsp.CoreLsp = &core
     newLsp.Key =  LspIDToKey(lspID)
-    LspDB.DBLock.Lock()
-    LspDB.Root = AvlInsert(LspDB.Root, newLsp.Key, &newLsp, true)
-    tmp := AvlSearch(LspDB.Root, newLsp.Key)
-    LspDB.DBLock.Unlock()
+    return &newLsp
+}
+
+func GenerateLocalLsp() {
+    // Triggered on adjacency change
+    // Build a local LSP from the information in adjacency database 
+    // Leaving fragment and PSN set to zero for now
+    // Sequence number is incremented every time this function is called
+    // TODO: See if there is a better way to do this --> probably need to move everything to use byte slices, these fixed arrays are a pain in the ass
+    sequenceNumber += 1
+    newLsp := buildEmptyLSP(sequenceNumber, cfg.sid)
+    // Also include the adjacency tlvs (assuming metric of 10 always)
+    reachTLV := getIPReachTLV()
+    neighborTLV := getNeighborTLV()
+    reachTLV.next_tlv = neighborTLV
+    newLsp.CoreLsp.FirstTlv = reachTLV 
+    UpdateDB.DBLock.Lock()
+    UpdateDB.Root = AvlInsert(UpdateDB.Root, newLsp.Key, newLsp, true)
+    tmp := AvlSearch(UpdateDB.Root, newLsp.Key)
+    UpdateDB.DBLock.Unlock()
     if tmp == nil {
         glog.Infof("Failed to generate local LSP %s", system_id_to_str(newLsp.LspID[:6]))
     } else {
@@ -317,9 +332,9 @@ func GenerateLocalLsp() {
     }
 }
 
-func PrintLspDB(root *AvlNode) {
+func PrintUpdateDB(root *AvlNode) {
     if root != nil {
-        PrintLspDB(root.left)
+        PrintUpdateDB(root.left)
         if root.data != nil {
             lsp := root.data.(*IsisLsp)
             glog.Infof("%s", system_id_to_str(lsp.LspID[:6]));
@@ -350,7 +365,7 @@ func PrintLspDB(root *AvlNode) {
                 curr = curr.next_tlv
             }            
         }
-        PrintLspDB(root.right)
+        PrintUpdateDB(root.right)
     }
 }
 

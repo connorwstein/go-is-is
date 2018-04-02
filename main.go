@@ -144,9 +144,9 @@ func (s *server) GetIntf(ctx context.Context, in *pb.IntfRequest) (*pb.IntfReply
 func (s *server) GetLsp(ctx context.Context, in *pb.LspRequest) (*pb.LspReply, error) {
     cfg.lock.Lock()
     var reply pb.LspReply
-    // Extract all the LSPs from the LspDB
+    // Extract all the LSPs from the UpdateDB
     stack := make([]*AvlNode, 0)
-    current := LspDB.Root
+    current := UpdateDB.Root
     done := false
     reply.Lsp = make([]string, 0)
     // This is pretty cool, it goes as far as it can to the left
@@ -260,7 +260,8 @@ func main() {
     // and add that to the configuration
     initInterfaces()
     ethernetInit()
-    LspDBInit()
+    UpdateDBInit()
+    DecisionDBInit()
 
     for _, intf := range cfg.interfaces {
         ethernetIntfInit(intf.name) // Creates send/recv raw sockets
