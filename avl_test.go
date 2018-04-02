@@ -5,11 +5,11 @@ import (
     "fmt"
 )
 
-func TestIterativePrint(t *testing.T) {
+func TestAvlIterativePrint(t *testing.T) {
     var root *AvlNode
     root = &AvlNode{key: 10, left: nil, right: nil, height: 1, data: nil}
-    root = AvlInsert(root, 20, 20) 
-    root = AvlInsert(root, 30, 30) 
+    root = AvlInsert(root, 20, 20, false) 
+    root = AvlInsert(root, 30, 30, false) 
     stack := make([]*AvlNode, 0)
     current := root
     done := false
@@ -34,8 +34,8 @@ func TestIterativePrint(t *testing.T) {
 func TestAvlTreeInsertDup(t *testing.T) {
     var root *AvlNode
     root = &AvlNode{key: 10, left: nil, right: nil, height: 1, data: nil}
-    root = AvlInsert(root, 10, 10) 
-    root = AvlInsert(root, 10, 10) 
+    root = AvlInsert(root, 10, 10, false) 
+    root = AvlInsert(root, 10, 10, false) 
     AvlPrint(root) 
 }
 
@@ -44,7 +44,7 @@ func TestAvlTreeSearch(t *testing.T) {
     root = &AvlNode{key: 10, left: nil, right: nil, height: 1}
     var i uint64
     for i = 0; i < 1000; i++ {
-        root = AvlInsert(root, i, i)
+        root = AvlInsert(root, i, i, false)
     }
     tmp1 := AvlSearch(root, 578)
     tmp2 := AvlSearch(root, 1200)
@@ -59,7 +59,7 @@ func TestAvlTreeInsert(t *testing.T) {
     root = &AvlNode{key: 10, left: nil, right: nil, height: 1}
     var i uint64
     for i = 0; i < 1000; i++ {
-        root = AvlInsert(root, i, nil)
+        root = AvlInsert(root, i, nil, false)
     }
 //     AvlPrint(root)
     // Check balanced 
@@ -75,7 +75,7 @@ func TestAvlTreeDelete(t *testing.T) {
     root = &AvlNode{key: 10, left: nil, right: nil, height: 1}
     var i uint64
     for i = 0; i < 1000; i++ {
-        root = AvlInsert(root, i, nil)
+        root = AvlInsert(root, i, nil, false)
     }
     // Should have roughly 0-499 in left subtree and 500-999 in right subtree
     // Try deleting all nodes from 999-500 (worst case scenario)
@@ -89,56 +89,65 @@ func TestAvlTreeDelete(t *testing.T) {
     }
 }
 
-func TestGetHeight(t *testing.T) {
+func TestAvlGetHeight(t *testing.T) {
     var root *AvlNode
     root = &AvlNode{key: 2, left: nil, right: nil, height: 1}
-    root = AvlInsert(root, 10, nil)
-    root = AvlInsert(root, 20, nil)
+    root = AvlInsert(root, 10, nil, false)
+    root = AvlInsert(root, 20, nil, false)
     if GetHeight(root) != 2 {
         t.Fail()
     }
-    AvlInsert(root, 30, nil)
+    AvlInsert(root, 30, nil, false)
     if GetHeight(root) != 3 {
         t.Fail()
     }
 }
 
-func TestRightRotate(t *testing.T) {
+func TestAvlRightRotate(t *testing.T) {
     var root *AvlNode
     root = &AvlNode{key: 10, left: nil, right: nil, height: 1}
-    root = AvlInsert(root, 9, nil)
-    root = AvlInsert(root, 8, nil)
+    root = AvlInsert(root, 9, nil, false)
+    root = AvlInsert(root, 8, nil, false)
     if root.left.key != 8 || root.right.key != 10 || root.key !=9 {
         t.Fail()
     }
 }
 
-func TestLeftRotate(t *testing.T) {
+func TestAvlLeftRotate(t *testing.T) {
     var root *AvlNode
     root = &AvlNode{key: 10, left: nil, right: nil, height: 1}
-    root = AvlInsert(root, 11, nil)
-    root = AvlInsert(root, 12, nil)
+    root = AvlInsert(root, 11, nil, false)
+    root = AvlInsert(root, 12, nil, false)
     if root.left.key != 10 || root.right.key != 12 || root.key != 11 {
         t.Fail()
     }
 }
 
-func TestLeftRight(t *testing.T) {
+func TestAvlLeftRight(t *testing.T) {
     var root *AvlNode
     root = &AvlNode{key: 10, left: nil, right: nil, height: 1}
-    root = AvlInsert(root, 5, nil)
-    root = AvlInsert(root, 9, nil)
+    root = AvlInsert(root, 5, nil, false)
+    root = AvlInsert(root, 9, nil, false)
     if root.left.key != 5 || root.right.key != 10 || root.key != 9 {
         t.Fail()
     }
 }
 
-func TestRightLeft(t *testing.T) {
+func TestAvlRightLeft(t *testing.T) {
     var root *AvlNode
     root = &AvlNode{key: 10, left: nil, right: nil, height: 1}
-    root = AvlInsert(root, 15, nil)
-    root = AvlInsert(root, 13, nil)
+    root = AvlInsert(root, 15, nil, false)
+    root = AvlInsert(root, 13, nil, false)
     if root.left.key != 10 || root.right.key != 15 || root.key != 13{
         t.Fail()
     }
+}
+
+func TestAvlOverwrite(t *testing.T) {
+    var root *AvlNode
+    root = &AvlNode{key: 10, left: nil, right: nil, height: 1}
+    root = AvlInsert(root, 12, 10, false)
+    root = AvlInsert(root, 15, 10, false)
+    root = AvlInsert(root, 15, 12, true)
+    AvlPrint(root)
 }

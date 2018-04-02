@@ -9,7 +9,6 @@ import (
     "time"
     "net"
     "encoding/hex"
-//     "fmt"
     "unsafe"
     "golang.org/x/sys/unix"
     "github.com/vishvananda/netlink"
@@ -52,9 +51,37 @@ type IsisLspDB struct {
 }
 
 var LspDB *IsisLspDB
+var sequenceNumber uint32
 
 func LspDBInit() {
     LspDB = &IsisLspDB{DBLock: sync.Mutex{}, Root: nil}
+}
+
+func floodNewLsp(receiveIntf *Intf, receivedLsp *IsisLsp) {
+    // Add this new LSP to all interfaces floodStates, and set SRM to true for all of them EXCEPT this interface which we 
+    // received it from
+    for _, intf := range cfg.interfaces {
+        glog.V(2).Infof("Locking interface %s", intf.name)
+        intf.lock.Lock()
+        if receiveIntf.name == intf.name {
+            // If it is already there, just set SRM to true
+            if _, inMap := intf.lspFloodStates[receivedLsp.Key]; ! inMap {
+                intf.lspFloodStates[receivedLsp.Key] = &LspFloodState{LspIDKey: receivedLsp.Key, LspID: receivedLsp.LspID, SRM: false, SSN: false}
+            } else {
+                intf.lspFloodStates[receivedLsp.Key].SRM = false 
+            }
+        } else {
+            glog.Infof("Flooding new lsp %s out interface: %s", system_id_to_str(receivedLsp.LspID[:6]), intf.name)
+            // If it is already there, just set SRM to true
+            if _, inMap := intf.lspFloodStates[receivedLsp.Key]; ! inMap {
+                intf.lspFloodStates[receivedLsp.Key] = &LspFloodState{LspIDKey: receivedLsp.Key, LspID: receivedLsp.LspID, SRM: true, SSN: false}
+            } else {
+                intf.lspFloodStates[receivedLsp.Key].SRM = true 
+            }
+        }
+        glog.V(2).Infof("Unlocking interface %s", intf.name)
+        intf.lock.Unlock()
+    }
 }
 
 func isisUpdateInput(receiveIntf *Intf, update chan []byte) {
@@ -65,7 +92,7 @@ func isisUpdateInput(receiveIntf *Intf, update chan []byte) {
     for {
         lsp := <- update
         receivedLsp := deserializeLsp(lsp[:])
-        glog.V(2).Infof("Got lsp update")
+        glog.V(2).Infof("Got lsp update %s sequence number %d", system_id_to_str(receivedLsp.LspID[:6]), binary.BigEndian.Uint32(receivedLsp.CoreLsp.LspHeader.SequenceNumber[:]))
         glog.V(2).Infof(hex.Dump(lsp[:]))
         // Check if we already have this LSP, if not, then insert it
         // into our own DB an flood it along to all the other interfaces we have
@@ -74,33 +101,20 @@ func isisUpdateInput(receiveIntf *Intf, update chan []byte) {
         LspDB.DBLock.Lock()
         tmp := AvlSearch(LspDB.Root, receivedLsp.Key)
         if tmp == nil {
-            // Don't have this LSP
+            // Don't have this LSP so lets add it
             glog.Infof("Adding new lsp %s (%v) to DB", system_id_to_str(receivedLsp.LspID[:6]), receivedLsp.Key)
-            LspDB.Root = AvlInsert(LspDB.Root, receivedLsp.Key, receivedLsp)
+            LspDB.Root = AvlInsert(LspDB.Root, receivedLsp.Key, receivedLsp, false)
             PrintLspDB(LspDB.Root)
-            // Add this new LSP to all interfaces floodStates, and set SRM to true for all of them EXCEPT this interface which we 
-            // received it from
-            for _, intf := range cfg.interfaces {
-                glog.V(2).Infof("Locking interface %s", intf.name)
-                intf.lock.Lock()
-                if receiveIntf.name == intf.name {
-                    // If it is already there, just set SRM to true
-                    if _, inMap := intf.lspFloodStates[receivedLsp.Key]; ! inMap {
-                        intf.lspFloodStates[receivedLsp.Key] = &LspFloodState{LspIDKey: receivedLsp.Key, LspID: receivedLsp.LspID, SRM: false, SSN: false}
-                    } else {
-                        intf.lspFloodStates[receivedLsp.Key].SRM = false 
-                    }
-                } else {
-                    glog.Infof("Flooding new lsp %s out interface: %s", system_id_to_str(receivedLsp.LspID[:6]), intf.name)
-                    // If it is already there, just set SRM to true
-                    if _, inMap := intf.lspFloodStates[receivedLsp.Key]; ! inMap {
-                        intf.lspFloodStates[receivedLsp.Key] = &LspFloodState{LspIDKey: receivedLsp.Key, LspID: receivedLsp.LspID, SRM: true, SSN: false}
-                    } else {
-                        intf.lspFloodStates[receivedLsp.Key].SRM = true 
-                    }
-                }
-                glog.V(2).Infof("Unlocking interface %s", intf.name)
-                intf.lock.Unlock()
+            floodNewLsp(receiveIntf, receivedLsp)
+        } else {
+            // We do have this LSP, check if the sequence number is newer than the current version we have if it is then update
+            lsp := tmp.(*IsisLsp)
+            if binary.BigEndian.Uint32(lsp.CoreLsp.LspHeader.SequenceNumber[:]) < binary.BigEndian.Uint32(receivedLsp.CoreLsp.LspHeader.SequenceNumber[:]) {
+                // Received one is newer, update and flood
+                glog.Infof("Overwriting new lsp %s (%v) to DB", system_id_to_str(receivedLsp.LspID[:6]), receivedLsp.Key)
+                LspDB.Root = AvlInsert(LspDB.Root, receivedLsp.Key, receivedLsp, true)
+                PrintLspDB(LspDB.Root)
+                floodNewLsp(receiveIntf, receivedLsp)
             }
         }
         LspDB.DBLock.Unlock()
@@ -205,6 +219,7 @@ func GenerateLocalLsp() {
     // Triggered on adjacency change
     // Build a local LSP from the information in adjacency database 
     // Leaving fragment and PSN set to zero for now
+    // Sequence number is incremented every time this function is called
     var newLsp IsisLsp 
     var lspID [8]byte
     bytes := system_id_to_bytes(cfg.sid)
@@ -218,7 +233,11 @@ func GenerateLocalLsp() {
                                    Version: 0x01, //
                                    Reserved: 0x00,
                                    Maximum_area_addresses: 0x00} // 0 means default 3 addresses
-    lspHeader := IsisLspHeader{}
+    // TODO: See if there is a better way to do this --> probably need to move everything to use byte slices, these fixed arrays are a pain in the ass
+    sequenceNumber += 1
+    var seq [4]byte
+    binary.BigEndian.PutUint32(seq[:], sequenceNumber)
+    lspHeader := IsisLspHeader{SequenceNumber: seq}
     lspHeader.LspID = lspID
     core := IsisLspCore{Header: isisPDUHeader,
                         LspHeader: lspHeader,
@@ -275,14 +294,14 @@ func GenerateLocalLsp() {
     newLsp.CoreLsp = &core
     newLsp.Key =  LspIDToKey(lspID)
     LspDB.DBLock.Lock()
-    LspDB.Root = AvlInsert(LspDB.Root, newLsp.Key, &newLsp)
+    LspDB.Root = AvlInsert(LspDB.Root, newLsp.Key, &newLsp, true)
     tmp := AvlSearch(LspDB.Root, newLsp.Key)
     LspDB.DBLock.Unlock()
     if tmp == nil {
         glog.Infof("Failed to generate local LSP %s", system_id_to_str(newLsp.LspID[:6]))
     } else {
         lsp := tmp.(*IsisLsp)
-        glog.Infof("Successfully generated local LSP %s", system_id_to_str(lsp.LspID[:6]))
+        glog.Infof("Successfully generated local LSP %s seq num %d", system_id_to_str(lsp.LspID[:6]), sequenceNumber)
     }
     // Lsp has been created, need to flood it on all interfaces
     for _, intf := range cfg.interfaces {

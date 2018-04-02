@@ -39,17 +39,23 @@ DONE:
             TLV 128 Internal Reachability
                 Prefix testnet1 metric 10
             TLV 2 IS Neighbors 
+                1112.00-00
         1112.00-00 // Node 2 
             TLV 128 Internal Reachability
                 Prefix testnet1 metric 10
                 Prefix testnet2 metric 10 
             TLV 2 IS Neighbors
+                1111.00-00
+                1113.00-00
         1113.00-00 // Node 3
             TLV 128 Internal Reachability
                 Prefix testnet2 metric 10
             TLV 2 IS Neighbors
+                1112.00-00
+- Need to support sequence numbers of LSPs to overwrite if we get a newer sequence number. Curren't the node2 will form an adjacency with either node 1 or 3 first, generate and send out its LSPs. Then it will do that again once the second adjacency forms, but node1 and 3 will not update their databases when they get this new LSP, as they already have an LSP from node2.
 
 TODO:
+- Might be able to convert the structs to use byte slices for everything rather than fixed sizes
 - Using the metrics in TLV 2 and TLV 128, run SPF on the LSP database. SPF runs on a graph where
 nodes are IS-IS instances, adjacencies are edges and directly connected prefixes are leaf nodes.
 All edges have a length/metric of 10. The important thing that we should see is the following on node 1:
@@ -66,9 +72,12 @@ fully testing SPF though.
 - Performance tests
 
 NICE TO HAVE:
+- Psuedonode support and DIS election process
+- CSNP/PSNP for database synchronization
+- Add adjacency formation jitter
+- Support reboot
+- L2 Areas
 - Verification of PDU length
 - Crypto auth
 - Add checksums
-- Add adjacency formation jitter
 - Support hostname
-- Psuedonode support and DIS election process

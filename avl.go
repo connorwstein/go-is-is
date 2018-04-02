@@ -66,18 +66,22 @@ func RotateLeft(node *AvlNode) *AvlNode {
     return y
 }
 
-func AvlInsert(root *AvlNode, key uint64, data interface{}) *AvlNode {
+func AvlInsert(root *AvlNode, key uint64, data interface{}, overwrite bool) *AvlNode {
+    // No change to the tree if the key is already present
     // Standard binary search tree insert, but we also rebalance as we go
     if root == nil {
         // This is the local to insert
         return &AvlNode{key: key, left: nil, right: nil, height: 1, data: data}
     }
     if key == root.key {
+        if overwrite {
+            root.data = data
+        }
         return root // Return unchanged pointer
     } else if key < root.key {
-        root.left = AvlInsert(root.left, key, data)
+        root.left = AvlInsert(root.left, key, data, overwrite)
     } else {
-        root.right = AvlInsert(root.right, key, data)
+        root.right = AvlInsert(root.right, key, data, overwrite)
     }
     // Update height of the ancestor node
     // Get the balance factor of this ancestor node (height left subtree - height right subtree)
