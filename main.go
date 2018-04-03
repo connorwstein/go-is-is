@@ -64,6 +64,7 @@ type LspFloodState struct {
 type Adjacency struct {
     state string // Can be NEW, INITIALIZING or UP
     neighbor_system_id []byte 
+    metric uint32
 }
 
 func system_id_to_str(system_id []byte) string {
@@ -147,28 +148,10 @@ func (s *server) GetIntf(ctx context.Context, in *pb.IntfRequest) (*pb.IntfReply
 func (s *server) GetLsp(ctx context.Context, in *pb.LspRequest) (*pb.LspReply, error) {
     cfg.lock.Lock()
     var reply pb.LspReply
-    // Extract all the LSPs from the UpdateDB
-    stack := make([]*AvlNode, 0)
-    current := UpdateDB.Root
-    done := false
     reply.Lsp = make([]string, 0)
-    // This is pretty cool, it goes as far as it can to the left
-    // then pops back one node, goes to the right and repeats
-    // which gives you an in-order traversal. Simulates recursion using a stack.
-    for ! done {
-        if current != nil {
-            stack = append(stack, current)
-            current = current.left
-        } else {
-            if len(stack) != 0 {
-                current = stack[len(stack) -1]
-                reply.Lsp = append(reply.Lsp, system_id_to_str(current.data.(*IsisLsp).LspID[:6]))
-                stack = stack[:len(stack) -1]
-                current = current.right
-            } else {
-                done = true
-            }
-        }
+    lsps := GetAllLsps(UpdateDB) 
+    for _, lsp := range lsps {
+        reply.Lsp = append(reply.Lsp, system_id_to_str(lsp.LspID[:6]))
     }
     cfg.lock.Unlock()
     return &reply, nil
@@ -225,6 +208,7 @@ func initInterfaces() {
                     var adj Adjacency
                     adj.state = "NEW"
                     new_intf.adj = &adj
+
                     cfg.interfaces[index] = &new_intf
                     
                     // Initialize the flood states slice on that interface

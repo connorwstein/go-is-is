@@ -384,3 +384,31 @@ func PrintLspFloodStates(intf *Intf) {
         glog.Infof("%s --> SRM %v", system_id_to_str(v.LspID[:6]), v.SRM)
     }
 }
+
+func GetAllLsps(db *IsisDB) []*IsisLsp {
+    // Extract all the LSPs from the UpdateDB
+    stack := make([]*AvlNode, 0)
+    current := db.Root
+    done := false
+    lsps := make([]*IsisLsp, 0)
+    // This is pretty cool, it goes as far as it can to the left
+    // then pops back one node, goes to the right and repeats
+    // which gives you an in-order traversal. Simulates recursion using a stack.
+    for ! done {
+        if current != nil {
+            stack = append(stack, current)
+            current = current.left
+        } else {
+            if len(stack) != 0 {
+                current = stack[len(stack) -1]
+                lsps = append(lsps, current.data.(*IsisLsp))
+                stack = stack[:len(stack) -1]
+                current = current.right
+            } else {
+                done = true
+            }
+        }
+    }
+    return lsps
+}
+

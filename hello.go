@@ -230,6 +230,7 @@ func isisHelloRecv(intf *Intf, helloChan chan []byte, sendChan chan []byte) {
             intf.lock.Lock()
             if bytes.Equal(rsp.lan_hello_pdu.FirstTlv.tlv_value, getMac(intf.name)) {
                 intf.adj.state = "UP"
+                intf.adj.metric = 10
                 intf.adj.neighbor_system_id = make([]byte, 6)
                 copy(intf.adj.neighbor_system_id, rsp.lan_hello_pdu.LanHelloHeader.SourceSystemId[:])
                 glog.Infof("Adjacency up between %v and %v on intf %v", cfg.sid, system_id_to_str(intf.adj.neighbor_system_id), intf.name)

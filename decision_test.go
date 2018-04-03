@@ -26,7 +26,7 @@ func TestDecisionSPF(t *testing.T) {
 
     // R1 
     r1Interfaces := make([]*Intf, 1)
-    r1Interfaces[0] = &Intf{adj: &Adjacency{neighbor_system_id: []byte{0x11, 0x11, 0x11, 0x11, 0x11, 0x12}}}
+    r1Interfaces[0] = &Intf{adj: &Adjacency{metric: 10, state: "UP", neighbor_system_id: []byte{0x11, 0x11, 0x11, 0x11, 0x11, 0x12}}}
     r1Interfaces[0].routes = make([]*net.IPNet, 1)
     r1Interfaces[0].routes[0] = &net.IPNet{IP: net.IP{172, 20, 0, 0}, Mask: net.IPMask{0xff, 0xff, 0, 0}}
     r1sid := "1111.1111.1111"
@@ -39,8 +39,8 @@ func TestDecisionSPF(t *testing.T) {
 
     // R2
     r2Interfaces := make([]*Intf, 2)
-    r2Interfaces[0] = &Intf{adj: &Adjacency{neighbor_system_id: []byte{0x11, 0x11, 0x11, 0x11, 0x11, 0x11}}}
-    r2Interfaces[1] = &Intf{adj: &Adjacency{neighbor_system_id: []byte{0x11, 0x11, 0x11, 0x11, 0x11, 0x13}}}
+    r2Interfaces[0] = &Intf{adj: &Adjacency{metric: 10, state: "UP", neighbor_system_id: []byte{0x11, 0x11, 0x11, 0x11, 0x11, 0x11}}}
+    r2Interfaces[1] = &Intf{adj: &Adjacency{metric: 10, state: "UP", neighbor_system_id: []byte{0x11, 0x11, 0x11, 0x11, 0x11, 0x13}}}
     r2Interfaces[0].routes = make([]*net.IPNet, 1)
     r2Interfaces[1].routes = make([]*net.IPNet, 1)
     r2Interfaces[0].routes[0] = &net.IPNet{IP: net.IP{172, 20, 0, 0}, Mask: net.IPMask{0xff, 0xff, 0, 0}}
@@ -55,7 +55,7 @@ func TestDecisionSPF(t *testing.T) {
 
     // R3
     r3Interfaces := make([]*Intf, 1)
-    r3Interfaces[0] = &Intf{adj: &Adjacency{neighbor_system_id: []byte{0x11, 0x11, 0x11, 0x11, 0x11, 0x12}}}
+    r3Interfaces[0] = &Intf{adj: &Adjacency{metric: 10, state: "UP", neighbor_system_id: []byte{0x11, 0x11, 0x11, 0x11, 0x11, 0x12}}}
     r3Interfaces[0].routes = make([]*net.IPNet, 1)
     r3Interfaces[0].routes[0] = &net.IPNet{IP: net.IP{172, 19, 0, 0}, Mask: net.IPMask{0xff, 0xff, 0, 0}}
     r3sid := "1111.1111.1113"
@@ -67,6 +67,11 @@ func TestDecisionSPF(t *testing.T) {
     UpdateDB.Root = AvlInsert(UpdateDB.Root, SystemIDToKey(r3sid), r3lsp, false)
 
 
-    turnFlagsOn()
     PrintUpdateDB(UpdateDB.Root)
+    
+    // Lets compute SPF from the perspective of R1
+    turnFlagsOn()
+    DecisionDBInit()
+    computeSPF(UpdateDB, DecisionDB, r1sid, r1Interfaces)
+    // Now print the decision DB and inspect it
 }
