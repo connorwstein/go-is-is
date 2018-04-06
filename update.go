@@ -48,6 +48,11 @@ type IsisDB struct {
     // May want to add more information here
 }
 
+type Neighbor struct {
+    systemID string
+    metric uint32
+}
+
 var UpdateDB *IsisDB
 var sequenceNumber uint32
 
@@ -215,7 +220,6 @@ func SystemIDToKey(systemID string) uint64 {
     return LspIDToKey(lspID)
 }
 
-
 func LspIDToKey(lspID [8]byte) uint64 {
     var key uint64 = binary.BigEndian.Uint64(lspID[:]) // Keyed on the LSP ID's integer value
     return key
@@ -226,6 +230,42 @@ func SystemIDToLspID(systemID string) [8]byte {
     bytes := system_id_to_bytes(systemID)
     copy(lspID[:], bytes[:])
     return lspID
+}
+
+func getNeighbors(neighborTLV *IsisTLV) []*Neighbor { 
+    var neighbors []*Neighbor
+    neighborCount := (int(neighborTLV.tlv_length) - 1) / 11
+    glog.V(2).Infof("Neighbor count %d", neighborCount)
+    neighbors = make([]*Neighbor, neighborCount)
+    currentNeighbor := 0
+    currentByte := 1 // Skip first virtual byte
+    for currentNeighbor < neighborCount {
+        // Tlv value is 1 virtual byte flag and then n multiples of 4 byte metric and 6 byte system id + 1 byte pseudo-node id
+        // Set pseudo-node id to 0 for now
+        var neighbor Neighbor
+        neighbor.metric = binary.BigEndian.Uint32(neighborTLV.tlv_value[currentByte:currentByte + 4])
+        currentByte += 4
+        neighbor.systemID = system_id_to_str(neighborTLV.tlv_value[currentByte:currentByte + 6])
+        currentByte += 7 // Skip PSN
+        glog.V(2).Infof("Current byte %d", currentByte)
+        neighbors[currentNeighbor] = &neighbor
+        currentNeighbor++
+    }
+    return neighbors
+}
+
+func lookupNeighbors(lsp *IsisLsp) []*Neighbor{
+    // Given an LSP returns  list of neig
+    //var neighbors []*Neighbor
+    currentTLV := lsp.CoreLsp.FirstTlv
+    for currentTLV != nil {
+        if int(currentTLV.tlv_type) == 2 {
+            return getNeighbors(currentTLV)
+        }
+        currentTLV = currentTLV.next_tlv
+    }
+    glog.V(2).Infof("No neighbor tlv found in LSP %s", system_id_to_str(lsp.LspID[:6]))
+    return nil
 }
 
 func getIPReachTLV(interfaces []*Intf) *IsisTLV {
@@ -387,6 +427,7 @@ func PrintLspFloodStates(intf *Intf) {
 
 func GetAllLsps(db *IsisDB) []*IsisLsp {
     // Extract all the LSPs from the UpdateDB
+    // TODO: consider making this a dictionary
     stack := make([]*AvlNode, 0)
     current := db.Root
     done := false

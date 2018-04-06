@@ -5,7 +5,7 @@ package main
 
 import (
     "sync"
-    "net"
+//     "net"
     "github.com/golang/glog"
 )
 
@@ -32,9 +32,68 @@ func isisDecision(spfEventQueue chan bool){
 type Triple struct {
     // Either systemID or prefix is set, not both
     systemID string
-    prefix *net.IPNet
     distance uint32
     adj *Adjacency
+}
+
+func printPaths(prefix string, paths []*Triple) {
+    for _, path := range paths {
+        glog.V(2).Infof("%s: %v", prefix, path)
+    }
+}
+
+func getAdjacencies(source *Triple, unknown []*IsisLsp) []*Triple {
+    // Given a source triple return a slice of triples from unknown
+    // Update the costs appropriately based on the cost to source
+    trips := make([]*Triple, 0)
+    for _, lsp := range unknown {
+        if source.systemID == system_id_to_str(lsp.LspID[:6]) {
+            glog.V(2).Infof("SPF: Found our systemID %s", source.systemID)
+            // Found our lsp, grabs its neighbors
+            neighbors := lookupNeighbors(lsp)
+            for _, neighbor := range neighbors {
+                glog.V(2).Infof("SPF: Neighbor %s", neighbor.systemID)
+                trips = append(trips, &Triple{systemID: neighbor.systemID, distance: neighbor.metric})
+            }
+        }
+    }
+    return trips
+}
+
+func checkInPaths(adj *Triple, paths []*Triple) bool {
+    for _, path := range paths {
+        if adj.systemID == path.systemID {
+            return true 
+        }
+    }
+    return false
+}
+
+func addAdjToTent(currentDistance uint32, adj *Triple, tent *[]*Triple, paths []*Triple) int {
+    // Returns 0 if just an update, or 1 if added
+    // Ignore if already in paths
+    // Update distance if already present
+    // otherwise add
+    if checkInPaths(adj, paths) {
+        return 0
+    }
+    found := false
+    for i, system := range *tent {
+        if adj.systemID == system.systemID {
+            found = true
+            // Already there, update distance if we can
+            if (adj.distance + currentDistance) < system.distance {
+                (*tent)[i].distance = adj.distance + currentDistance
+            }
+        }
+    }
+    if ! found {
+        glog.V(2).Infof("Adding system %s", adj.systemID)
+        adj.distance += currentDistance
+        *tent = append(*tent, adj)
+        return 1
+    }
+    return 0
 }
 
 func computeSPF(updateDB *IsisDB, decisionDB *IsisDB, localSystemID string, localInterfaces []*Intf) {
@@ -46,7 +105,6 @@ func computeSPF(updateDB *IsisDB, decisionDB *IsisDB, localSystemID string, loca
     // Update the decision DB
     // The local systemID is our starting point for dijkstra
     updateDB.DBLock.Lock()
-//     decisionDB.DBLock.Lock()
     // SPF time
     // Decision DB should still be keyed by system ID, but its contents should be prefixes and their associated costs and next hops?
     // For the first crack at this let assume there are no-parallel edges (i.e. two adjacencies to the same next hop)
@@ -59,14 +117,11 @@ func computeSPF(updateDB *IsisDB, decisionDB *IsisDB, localSystemID string, loca
     unknown := GetAllLsps(updateDB)
     localSystemIDIndex := -1
     for i, lsp := range unknown {
-        glog.V(2).Infof("Unknown LSP %v", lsp)
         if system_id_to_str(lsp.LspID[:6]) == localSystemID {
-            glog.V(2).Infof("Adding LSP %v to paths", lsp)
             paths = append(paths, &Triple{systemID: localSystemID}) // Leave distance 0 and adj nil
             localSystemIDIndex = i
         }
     }
-    glog.V(2).Infof("SPF: paths: %v", paths)
     // Yeah, yeah this is slow. Remove our own lsp
     unknown = append(unknown[:localSystemIDIndex], unknown[localSystemIDIndex + 1:]...)
     
@@ -76,80 +131,52 @@ func computeSPF(updateDB *IsisDB, decisionDB *IsisDB, localSystemID string, loca
     for _, intf := range localInterfaces {
         if intf.adj.state == "UP" {
             tent = append(tent, &Triple{systemID: system_id_to_str(intf.adj.neighbor_system_id), distance: intf.adj.metric, adj: intf.adj})
-            for _, route := range intf.routes {
-                // TODO: store this metric with the prefix
-                tent = append(tent, &Triple{prefix: route, distance: 10}) 
-            }
         }
     } 
 /*
 At each step of the algorithm, the TENT list is examined, and the node with the least cost from the source is moved into PATHS. When a node is placed in PATHS, all IP prefixes advertised by it are installed in the IS-IS Routing Information Base (RIB) with the corresponding metric and next hop. The directly connected neighbors of the node that just made it into PATHS are then added to TENT if they are not already there and their associated costs adjusted accordingly, for the next selection.
 */
     tentSize := len(tent)
-    glog.V(2).Infof("SPF: paths: %v", paths)
-    for tentSize != 0 {
+    printPaths("path", paths)
+    for tentSize > 0 {
         // Examine each element in tent, looking for the shortest path from ourselves to that node/prefix
         // After finding the shortest one, update the metric appopriately and add it to paths. Then add all adjacencies for that guy to tent.
         // If the paths are equal, pick one arbitrarily?
-        glog.V(2).Infof("SPF: tent: %v", tent)
+        glog.V(2).Infof("SPF: tent size %d len tent %d", tentSize, len(tent))
+        printPaths("tent", tent)
         minCostFromSource := ^uint32(0) // Max uint
         bestPathIndex := -1
         for i, candidate := range tent {
-            if candidate.prefix != nil {
-                glog.V(2).Infof("SPF: Examining prefix %v", candidate)
-            } else {
-                glog.V(2).Infof("SPF: Examining system %v", candidate)
-            }
             if candidate.distance < minCostFromSource {
+                glog.V(2).Infof("SPF: Best system %v", candidate)
                 minCostFromSource = candidate.distance
                 bestPathIndex = i
             }
         }
+        glog.V(2).Infof("SPF: Best candidate %s, cost %d", tent[bestPathIndex].systemID, minCostFromSource)
         // We now have the best candidate
         // Add it to paths
         paths = append(paths, tent[bestPathIndex])
+        // Add all of this new guys adjacencies, some triple, need to find all of its adjacencies
+        bestAdjacencies := getAdjacencies(tent[bestPathIndex], unknown)
+        // Remove from tents
         tent = append(tent[:bestPathIndex], tent[bestPathIndex + 1:]...)
+        glog.V(2).Infof("SPF: tent size %d len tent %d", tentSize, len(tent))
         tentSize--
+        // Now add all those adjacencies to tent
+        // If the node is already in tent but it has a longer path, then update the distance
+        for _, adj := range bestAdjacencies {
+            added := addAdjToTent(minCostFromSource, adj, &tent, paths)
+            if added == 1 {
+                glog.V(2).Infof("SPF: added adj: %s", adj.systemID)
+            } else {
+                glog.V(2).Infof("SPF: did not add adj: %s", adj.systemID)
+            }
+            tentSize += added
+            glog.V(2).Infof("SPF: tent size %d len tent %d", tentSize, len(tent))
+        } 
     } 
-    glog.V(2).Infof("SPF: paths: %v", paths)
-//     decisionDB.DBLock.Unlock()
+    printPaths("path", paths)
     updateDB.DBLock.Unlock()
 }
 
-// func PrintDecisionDB() {
-//     // TODO: Combine this with the update DB one, passing in a walk function
-//     if root != nil {
-//         PrintDecisionDB(root.left)
-//         if root.data != nil {
-//             lsp := root.data.(*IsisLsp)
-//             glog.Infof("%s", system_id_to_str(lsp.LspID[:6]));
-//             glog.V(1).Infof("%s -> %v", system_id_to_str(lsp.LspID[:6]), lsp);
-//             var curr *IsisTLV = lsp.CoreLsp.FirstTlv
-//             for curr != nil {
-//                 glog.V(1).Infof("\tTLV %d\n", curr.tlv_type);
-//                 glog.V(1).Infof("\tTLV size %d\n", curr.tlv_length);
-//                 if curr.tlv_type == 128 {
-//                     // This is a external reachability tlv
-//                     // TODO: fix hard coding here
-//                     for i := 0; i < int(curr.tlv_length) / 12; i++ {
-//                         var prefix net.IPNet 
-//                         prefix.IP = curr.tlv_value[i*12:i*12 + 4]
-//                         prefix.Mask = curr.tlv_value[i*12 + 4: i*12 + 8]
-//                         metric := curr.tlv_value[i*12 + 8: i*12 + 12]
-//                         glog.V(1).Infof("\t\t%s Metric %d\n", prefix.String(), binary.BigEndian.Uint32(metric[:]));
-//                     }
-//                 } else if curr.tlv_type == 2 {
-//                     // This is a neighbors tlv, its length - 1 (to exclude the first virtualByteFlag) will be a multiple of 11
-//                     for i := 0; i < int(curr.tlv_length - 1)  / 11; i++ {
-//                         // Print out the neighbor system ids and metric 
-//                         metric := curr.tlv_value[i*11 + 4]
-//                         systemID := curr.tlv_value[(i*11 + 1 + 4):(i*11 + 1 + 4 + 6)]
-//                         glog.V(1).Infof("\t\t%s Metric %d\n", system_id_to_str(systemID), metric)
-//                     }
-//                 }
-//                 curr = curr.next_tlv
-//             }            
-//         }
-//         PrintUpdateDB(root.right)
-//     }
-// }
