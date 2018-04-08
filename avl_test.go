@@ -5,72 +5,66 @@ import (
     "fmt"
 )
 
-func TestAvlIterativePrint(t *testing.T) {
-    var root *AvlNode
-    root = &AvlNode{key: 10, left: nil, right: nil, height: 1, data: nil}
-    root = AvlInsert(root, 20, 20, false) 
-    root = AvlInsert(root, 30, 30, false) 
-    stack := make([]*AvlNode, 0)
-    current := root
-    done := false
-    for ! done {
-        if current != nil {
-            stack = append(stack, current)
-            current = current.left
-        } else {
-            if len(stack) != 0 {
-                // Pop an item off the stack
-                current = stack[len(stack) -1]
-                fmt.Printf("LSP: %v\n", current) 
-                stack = stack[:len(stack) -1]
-                current = current.right
-            } else {
-                done = true
-            }
-        }
-    }
+type DummyData struct {
+    data int 
+}
+func (d DummyData) String() string {
+    return fmt.Sprintf("%d", d.data)
 }
 
-func TestAvlTreeInsertDup(t *testing.T) {
+func TestAvlGetAll(t *testing.T) {
+    // Should produce an in-order traversal
     var root *AvlNode
-    root = &AvlNode{key: 10, left: nil, right: nil, height: 1, data: nil}
-    root = AvlInsert(root, 10, 10, false) 
-    root = AvlInsert(root, 10, 10, false) 
-    AvlPrint(root) 
-}
-
-func TestAvlTreeSearch(t *testing.T) {
-    var root *AvlNode
-    root = &AvlNode{key: 10, left: nil, right: nil, height: 1}
-    var i uint64
-    for i = 0; i < 1000; i++ {
-        root = AvlInsert(root, i, i, false)
-    }
-    tmp1 := AvlSearch(root, 578)
-    tmp2 := AvlSearch(root, 1200)
-    fmt.Println(tmp1.(uint64), tmp2)
-    if tmp1.(uint64) != 578 || tmp2 != nil {
+    root = &AvlNode{key: 10, left: nil, right: nil, height: 1, data: &DummyData{}}
+    root = AvlInsert(root, 20, &DummyData{data: 20}, false) 
+    root = AvlInsert(root, 30, &DummyData{data: 30}, false) 
+    nodes := AvlGetAll(root)
+    if nodes[0].key != 10 && nodes[1].key != 20 && nodes[2].key != 30 {
         t.Fail()
     }
 }
 
-func TestAvlTreeInsert(t *testing.T) {
+func TestAvlInsertDup(t *testing.T) {
+    // Should only have one element
+    var root *AvlNode
+    root = &AvlNode{key: 10, left: nil, right: nil, height: 1, data: &DummyData{}}
+    root = AvlInsert(root, 10, &DummyData{data:10}, false) 
+    root = AvlInsert(root, 10, &DummyData{data:10}, false) 
+    nodes := AvlGetAll(root)
+    if len(nodes) != 1 {
+        t.Fail()
+    }
+}
+
+func TestAvlSearch(t *testing.T) {
     var root *AvlNode
     root = &AvlNode{key: 10, left: nil, right: nil, height: 1}
     var i uint64
     for i = 0; i < 1000; i++ {
+        root = AvlInsert(root, i, &DummyData{data: int(i)}, false)
+    }
+    tmp1 := AvlSearch(root, 578)
+    tmp2 := AvlSearch(root, 1200)
+    if tmp1.String() != "578" || tmp2 != nil {
+        t.Fail()
+    }
+}
+
+func TestAvlInsert(t *testing.T) {
+    var root *AvlNode
+    root = &AvlNode{key: 10, left: nil, right: nil, height: 1, data: &DummyData{}}
+    var i uint64
+    for i = 0; i < 1000; i++ {
         root = AvlInsert(root, i, nil, false)
     }
-//     AvlPrint(root)
     // Check balanced 
     b := GetBalanceFactor(root)
-    fmt.Println("Balance factor is:", b)
     if b > 1 || b < -1 {
         t.Fail()
     }
 }
 
-func TestAvlTreeDelete(t *testing.T) {
+func TestAvlDelete(t *testing.T) {
     var root *AvlNode
     root = &AvlNode{key: 10, left: nil, right: nil, height: 1}
     var i uint64
@@ -83,7 +77,6 @@ func TestAvlTreeDelete(t *testing.T) {
         root = AvlDelete(root, i)
     }
     b := GetBalanceFactor(root)
-    fmt.Println("Balance factor is:", b)
     if b > 1 || b < -1 {
         t.Fail()
     }
@@ -146,8 +139,11 @@ func TestAvlRightLeft(t *testing.T) {
 func TestAvlOverwrite(t *testing.T) {
     var root *AvlNode
     root = &AvlNode{key: 10, left: nil, right: nil, height: 1}
-    root = AvlInsert(root, 12, 10, false)
-    root = AvlInsert(root, 15, 10, false)
-    root = AvlInsert(root, 15, 12, true)
-    AvlPrint(root)
+    root = AvlInsert(root, 12, &DummyData{data:10}, false)
+    root = AvlInsert(root, 15, &DummyData{data:10}, false)
+    root = AvlInsert(root, 15, &DummyData{data:12}, true)
+    nodes := AvlGetAll(root) 
+    if len(nodes) != 3 || nodes[2].data.String() != "12" {
+        t.Fail()
+    }
 }

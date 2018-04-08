@@ -65,6 +65,18 @@ type Adjacency struct {
     state string // Can be NEW, INITIALIZING or UP
     neighbor_system_id []byte 
     metric uint32
+    intfName string 
+}
+
+func getAdjacency(neighborSystemID string) *Adjacency {
+    for i, _ := range cfg.interfaces {
+        if cfg.interfaces[i].adj.state == "UP" {
+            if system_id_to_str(cfg.interfaces[i].adj.neighbor_system_id) == neighborSystemID {
+                return cfg.interfaces[i].adj
+            }
+        }
+    }
+    return nil
 }
 
 func system_id_to_str(system_id []byte) string {
@@ -149,9 +161,9 @@ func (s *server) GetLsp(ctx context.Context, in *pb.LspRequest) (*pb.LspReply, e
     cfg.lock.Lock()
     var reply pb.LspReply
     reply.Lsp = make([]string, 0)
-    lsps := GetAllLsps(UpdateDB) 
-    for _, lsp := range lsps {
-        reply.Lsp = append(reply.Lsp, system_id_to_str(lsp.LspID[:6]))
+    nodes := AvlGetAll(UpdateDB.Root) 
+    for _, node := range nodes {
+        reply.Lsp = append(reply.Lsp, system_id_to_str(node.data.(*IsisLsp).LspID[:6]))
     }
     cfg.lock.Unlock()
     return &reply, nil
@@ -207,6 +219,7 @@ func initInterfaces() {
                     new_intf.lock = sync.Mutex{}
                     var adj Adjacency
                     adj.state = "NEW"
+                    adj.intfName = i.Name
                     new_intf.adj = &adj
 
                     cfg.interfaces[index] = &new_intf
@@ -264,7 +277,7 @@ func main() {
     initInterfaces()
     ethernetInit()
     UpdateDBInit()
-    DecisionDBInit()
+    TopoDBInit()
 
     for _, intf := range cfg.interfaces {
         ethernetIntfInit(intf.name) // Creates send/recv raw sockets

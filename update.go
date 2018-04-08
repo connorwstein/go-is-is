@@ -7,6 +7,7 @@
 package main
 import (
     "time"
+    "fmt"
     "net"
     "encoding/hex"
     "unsafe"
@@ -40,6 +41,37 @@ type IsisLsp struct {
     Key uint64 // Used for key in the UpdateDB
     LspID [8]byte
     CoreLsp *IsisLspCore
+}
+
+func (lsp IsisLsp) String() string {
+    var lspString bytes.Buffer
+    lspString.WriteString(fmt.Sprintf("%s", system_id_to_str(lsp.LspID[:6])))
+    var curr *IsisTLV = lsp.CoreLsp.FirstTlv
+    for curr != nil {
+        lspString.WriteString(fmt.Sprintf("\tTLV %d\n", curr.tlv_type))
+        lspString.WriteString(fmt.Sprintf("\tTLV size %d\n", curr.tlv_length))
+        if curr.tlv_type == 128 {
+            // This is a external reachability tlv
+            // TODO: fix hard coding here
+            for i := 0; i < int(curr.tlv_length) / 12; i++ {
+                var prefix net.IPNet 
+                prefix.IP = curr.tlv_value[i*12:i*12 + 4]
+                prefix.Mask = curr.tlv_value[i*12 + 4: i*12 + 8]
+                metric := curr.tlv_value[i*12 + 8: i*12 + 12]
+                lspString.WriteString(fmt.Sprintf("\t\t%s Metric %d\n", prefix.String(), binary.BigEndian.Uint32(metric[:])))
+            }
+        } else if curr.tlv_type == 2 {
+            // This is a neighbors tlv, its length - 1 (to exclude the first virtualByteFlag) will be a multiple of 11
+            for i := 0; i < int(curr.tlv_length - 1)  / 11; i++ {
+                // Print out the neighbor system ids and metric 
+                metric := curr.tlv_value[i*11 + 4]
+                systemID := curr.tlv_value[(i*11 + 1 + 4):(i*11 + 1 + 4 + 6)]
+                lspString.WriteString(fmt.Sprintf("\t\t%s Metric %d\n", system_id_to_str(systemID), metric))
+            }
+        }
+        curr = curr.next_tlv
+    }            
+    return lspString.String() 
 }
 
 type IsisDB struct {
@@ -386,34 +418,7 @@ func PrintUpdateDB(root *AvlNode) {
     if root != nil {
         PrintUpdateDB(root.left)
         if root.data != nil {
-            lsp := root.data.(*IsisLsp)
-            glog.Infof("%s", system_id_to_str(lsp.LspID[:6]));
-            glog.V(1).Infof("%s -> %v", system_id_to_str(lsp.LspID[:6]), lsp);
-            var curr *IsisTLV = lsp.CoreLsp.FirstTlv
-            for curr != nil {
-                glog.V(1).Infof("\tTLV %d\n", curr.tlv_type);
-                glog.V(1).Infof("\tTLV size %d\n", curr.tlv_length);
-                if curr.tlv_type == 128 {
-                    // This is a external reachability tlv
-                    // TODO: fix hard coding here
-                    for i := 0; i < int(curr.tlv_length) / 12; i++ {
-                        var prefix net.IPNet 
-                        prefix.IP = curr.tlv_value[i*12:i*12 + 4]
-                        prefix.Mask = curr.tlv_value[i*12 + 4: i*12 + 8]
-                        metric := curr.tlv_value[i*12 + 8: i*12 + 12]
-                        glog.V(1).Infof("\t\t%s Metric %d\n", prefix.String(), binary.BigEndian.Uint32(metric[:]));
-                    }
-                } else if curr.tlv_type == 2 {
-                    // This is a neighbors tlv, its length - 1 (to exclude the first virtualByteFlag) will be a multiple of 11
-                    for i := 0; i < int(curr.tlv_length - 1)  / 11; i++ {
-                        // Print out the neighbor system ids and metric 
-                        metric := curr.tlv_value[i*11 + 4]
-                        systemID := curr.tlv_value[(i*11 + 1 + 4):(i*11 + 1 + 4 + 6)]
-                        glog.V(1).Infof("\t\t%s Metric %d\n", system_id_to_str(systemID), metric)
-                    }
-                }
-                curr = curr.next_tlv
-            }            
+            glog.V(2).Infof("%v", root.data)
         }
         PrintUpdateDB(root.right)
     }
@@ -424,32 +429,3 @@ func PrintLspFloodStates(intf *Intf) {
         glog.Infof("%s --> SRM %v", system_id_to_str(v.LspID[:6]), v.SRM)
     }
 }
-
-func GetAllLsps(db *IsisDB) []*IsisLsp {
-    // Extract all the LSPs from the UpdateDB
-    // TODO: consider making this a dictionary
-    stack := make([]*AvlNode, 0)
-    current := db.Root
-    done := false
-    lsps := make([]*IsisLsp, 0)
-    // This is pretty cool, it goes as far as it can to the left
-    // then pops back one node, goes to the right and repeats
-    // which gives you an in-order traversal. Simulates recursion using a stack.
-    for ! done {
-        if current != nil {
-            stack = append(stack, current)
-            current = current.left
-        } else {
-            if len(stack) != 0 {
-                current = stack[len(stack) -1]
-                lsps = append(lsps, current.data.(*IsisLsp))
-                stack = stack[:len(stack) -1]
-                current = current.right
-            } else {
-                done = true
-            }
-        }
-    }
-    return lsps
-}
-

@@ -2,7 +2,6 @@ package main
 
 import (
     "testing"
-    "fmt"
     "net"
     "flag"
 )
@@ -15,6 +14,12 @@ func turnFlagsOn() {
 }
 
 func TestDecisionSPF(t *testing.T) {
+    // TOPO:  R1 -- 10 -- R2 -- 10 -- R3
+    // Result should be:
+    // R1 0  nexthop nil
+    // R2 10 nexthop R2 eth0 
+    // R3 20 nexthop R2 eth0
+    
     // Build a sample update database then apply SPF
     // Required for this: interfaces with routes and adjacencies to build the reachability and neighbor TLVs
     // Adjacencies need a neighbor system id
@@ -22,11 +27,10 @@ func TestDecisionSPF(t *testing.T) {
     // will need a way to generate scale topologies eventually 
     initConfig()
     UpdateDBInit()
-    fmt.Println(UpdateDB)
 
     // R1 
     r1Interfaces := make([]*Intf, 1)
-    r1Interfaces[0] = &Intf{adj: &Adjacency{metric: 10, state: "UP", neighbor_system_id: []byte{0x11, 0x11, 0x11, 0x11, 0x11, 0x12}}}
+    r1Interfaces[0] = &Intf{adj: &Adjacency{metric: 10, state: "UP", neighbor_system_id: []byte{0x11, 0x11, 0x11, 0x11, 0x11, 0x12}, intfName: "eth0"}}
     r1Interfaces[0].routes = make([]*net.IPNet, 1)
     r1Interfaces[0].routes[0] = &net.IPNet{IP: net.IP{172, 20, 0, 0}, Mask: net.IPMask{0xff, 0xff, 0, 0}}
     r1sid := "1111.1111.1111"
@@ -39,8 +43,8 @@ func TestDecisionSPF(t *testing.T) {
 
     // R2
     r2Interfaces := make([]*Intf, 2)
-    r2Interfaces[0] = &Intf{adj: &Adjacency{metric: 10, state: "UP", neighbor_system_id: []byte{0x11, 0x11, 0x11, 0x11, 0x11, 0x11}}}
-    r2Interfaces[1] = &Intf{adj: &Adjacency{metric: 10, state: "UP", neighbor_system_id: []byte{0x11, 0x11, 0x11, 0x11, 0x11, 0x13}}}
+    r2Interfaces[0] = &Intf{adj: &Adjacency{metric: 10, state: "UP", neighbor_system_id: []byte{0x11, 0x11, 0x11, 0x11, 0x11, 0x11}, intfName: "eth0"}}
+    r2Interfaces[1] = &Intf{adj: &Adjacency{metric: 10, state: "UP", neighbor_system_id: []byte{0x11, 0x11, 0x11, 0x11, 0x11, 0x13}, intfName: "eth1"}}
     r2Interfaces[0].routes = make([]*net.IPNet, 1)
     r2Interfaces[1].routes = make([]*net.IPNet, 1)
     r2Interfaces[0].routes[0] = &net.IPNet{IP: net.IP{172, 20, 0, 0}, Mask: net.IPMask{0xff, 0xff, 0, 0}}
@@ -55,7 +59,7 @@ func TestDecisionSPF(t *testing.T) {
 
     // R3
     r3Interfaces := make([]*Intf, 1)
-    r3Interfaces[0] = &Intf{adj: &Adjacency{metric: 10, state: "UP", neighbor_system_id: []byte{0x11, 0x11, 0x11, 0x11, 0x11, 0x12}}}
+    r3Interfaces[0] = &Intf{adj: &Adjacency{metric: 10, state: "UP", neighbor_system_id: []byte{0x11, 0x11, 0x11, 0x11, 0x11, 0x12}, intfName: "eth0"}}
     r3Interfaces[0].routes = make([]*net.IPNet, 1)
     r3Interfaces[0].routes[0] = &net.IPNet{IP: net.IP{172, 19, 0, 0}, Mask: net.IPMask{0xff, 0xff, 0, 0}}
     r3sid := "1111.1111.1113"
@@ -66,12 +70,42 @@ func TestDecisionSPF(t *testing.T) {
     r3lsp.CoreLsp.FirstTlv = r3reachTLV
     UpdateDB.Root = AvlInsert(UpdateDB.Root, SystemIDToKey(r3sid), r3lsp, false)
 
-
     PrintUpdateDB(UpdateDB.Root)
     
-    // Lets compute SPF from the perspective of R1
-    turnFlagsOn()
-    DecisionDBInit()
-    computeSPF(UpdateDB, DecisionDB, r1sid, r1Interfaces)
-    // Now print the decision DB and inspect it
+    // Lets compute SPF from the perspective of R1, R2 and R3
+    //turnFlagsOn()
+    var Topo1 *IsisDB = &IsisDB{}
+    var Topo2 *IsisDB = &IsisDB{}
+    var Topo3 *IsisDB = &IsisDB{}
+    computeSPF(UpdateDB, Topo1, r1sid, r1Interfaces)
+    computeSPF(UpdateDB, Topo2, r2sid, r2Interfaces)
+    computeSPF(UpdateDB, Topo3, r3sid, r3Interfaces)
+    // Inspect the topology learned by each node
+    topo1 := AvlGetAll(Topo1.Root)
+    for _, node := range topo1 {
+        trip := node.data.(*Triple)
+        if (trip.systemID == r1sid && trip.distance != 0) ||
+           (trip.systemID == r2sid && trip.distance != 10) ||
+           (trip.systemID == r3sid && trip.distance != 20) {
+            t.Fail()
+        }
+    }
+    topo2 := AvlGetAll(Topo2.Root)
+    for _, node := range topo2 {
+        trip := node.data.(*Triple)
+        if (trip.systemID == r1sid && trip.distance != 10) ||
+           (trip.systemID == r2sid && trip.distance != 0) ||
+           (trip.systemID == r3sid && trip.distance != 10) {
+            t.Fail()
+        }
+    }
+    topo3 := AvlGetAll(Topo3.Root)
+    for _, node := range topo3 {
+        trip := node.data.(*Triple)
+        if (trip.systemID == r1sid && trip.distance != 20) ||
+           (trip.systemID == r2sid && trip.distance != 10) ||
+           (trip.systemID == r3sid && trip.distance != 0) {
+            t.Fail()
+        }
+    }
 }

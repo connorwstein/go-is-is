@@ -2,14 +2,24 @@ package main
 
 import (
        "fmt"
+       "github.com/golang/glog"
 )
+
+type AvlData interface {
+    String() string
+}
 
 type AvlNode struct {
     key uint64
     left *AvlNode 
     right *AvlNode
-    data interface{}
+    data AvlData
     height int
+}
+
+func (node AvlNode) String() string {
+    // Print a full avl node
+    return fmt.Sprintf("\nKey %v\n Data:\n %v\n", node.key, node.data)
 }
 
 func Max(a, b int) int {
@@ -66,7 +76,7 @@ func RotateLeft(node *AvlNode) *AvlNode {
     return y
 }
 
-func AvlInsert(root *AvlNode, key uint64, data interface{}, overwrite bool) *AvlNode {
+func AvlInsert(root *AvlNode, key uint64, data AvlData, overwrite bool) *AvlNode {
     // No change to the tree if the key is already present
     // Standard binary search tree insert, but we also rebalance as we go
     if root == nil {
@@ -167,7 +177,7 @@ func AvlDelete(root *AvlNode, key uint64) *AvlNode {
     return root // Return the unchanged pointer
 }
 
-func AvlSearch(root *AvlNode, key uint64) interface{} {
+func AvlSearch(root *AvlNode, key uint64) AvlData {
     // Same as a normal binary search tree search
     // If the key is greater than root.key, search right subtree, smaller - search left subtree
     if root == nil {
@@ -183,7 +193,7 @@ func AvlSearch(root *AvlNode, key uint64) interface{} {
     }
 }
 
-func AvlUpdate(root *AvlNode, key uint64, newData interface {}) {
+func AvlUpdate(root *AvlNode, key uint64, newData AvlData) {
     // Find the key, replace the data
     if root == nil {
         // Unable to find key
@@ -198,11 +208,35 @@ func AvlUpdate(root *AvlNode, key uint64, newData interface {}) {
     }
 }
 
+func AvlGetAll(root *AvlNode) []*AvlNode {
+    stack := make([]*AvlNode, 0)
+    current := root
+    done := false
+    nodes := make([]*AvlNode, 0)
+    for ! done {
+        if current != nil {
+            stack = append(stack, current)
+            current = current.left
+        } else {
+            if len(stack) != 0 {
+                // Pop an item off the stack
+                current = stack[len(stack) -1]
+                nodes = append(nodes, current)
+                stack = stack[:len(stack) -1]
+                current = current.right
+            } else {
+                done = true
+            }
+        }
+    }
+    return nodes
+}
+
 func AvlPrint(node *AvlNode){
     // Find a way to pretty print the nodes
     if node != nil {
         AvlPrint(node.left) 
-        fmt.Printf("Key: %v Height: %v Left: %v Right: %v\n", node.key, node.height, node.left, node.right)
+        glog.V(2).Infof("%v\n", node)
         AvlPrint(node.right)
     }
 }
