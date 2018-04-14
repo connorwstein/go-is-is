@@ -41,4 +41,12 @@ func main() {
     for _, lsp := range showLsp.Lsp {
         fmt.Println("LSP:", lsp)
     }
+
+    showTopo, err := c.GetTopo(context.Background(), &pb.TopoRequest{ShTopo: ""})
+    if err != nil {
+        fmt.Printf("Unable to get state: %v", err)
+    }
+    for _, topo := range showTopo.Topo {
+        fmt.Println("LSP:", topo)
+    }
 }

@@ -2,13 +2,13 @@ package main
 
 import (
     "testing"
-    "fmt"
+    "github.com/golang/glog"
     "sync"
 )
 
 func TestInitInterfaces(t *testing.T) {
     cfg = &Config{lock: sync.Mutex{}, sid: ""}
     initInterfaces()
-    fmt.Println(cfg.interfaces[0].routes)
+    glog.V(2).Infof("%v", cfg.interfaces[0].routes)
     // TODO: more testing here
 }

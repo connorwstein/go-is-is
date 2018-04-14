@@ -8,12 +8,12 @@
 package main
 
 import (
-    "log"
     "os"
     "fmt"
     "time"
     "golang.org/x/net/context"
     "google.golang.org/grpc"
+    "github.com/golang/glog"
     pb "./config"
     "strings"
     "testing"
@@ -23,14 +23,14 @@ func ConfigureSid(host string, port string, sid string) *pb.SystemIDCfgReply {
     target := [2]string{host, port}
     conn, err := grpc.Dial(strings.Join(target[:], ":"), grpc.WithInsecure())
     if err != nil {
-        log.Fatalf("Failed to connect to gRPC server: %v", err)
+        glog.Errorf("Failed to connect to gRPC server: %v", err)
     }
     defer conn.Close()
 
     c := pb.NewConfigureClient(conn)
     rsp, err := c.ConfigureSystemID(context.Background(), &pb.SystemIDCfgRequest{Sid: sid})
     if err != nil {
-        log.Fatalf("Unable to configure SID: %v", err)
+        glog.Errorf("Unable to configure SID: %v", err)
     }
     return rsp
 }
@@ -40,7 +40,7 @@ func Get(host string, port string, req string) interface{} {
     target := [2]string{host, port}
     conn, err := grpc.Dial(strings.Join(target[:], ":"), grpc.WithInsecure())
     if err != nil {
-        log.Fatalf("Failed to connect to gRPC server: %v", err)
+        glog.Errorf("Failed to connect to gRPC server: %v", err)
     }
     defer conn.Close()
 
@@ -49,16 +49,22 @@ func Get(host string, port string, req string) interface{} {
     if req == "intf" {
         r, err := c.GetIntf(context.Background(), &pb.IntfRequest{ShIntf: ""})
         if err != nil {
-            log.Fatalf("Unable to get state: %v", err)
+            glog.Errorf("Unable to get state: %v", err)
         }
-        log.Printf("Intf response %s", r)
         return r
     } else if req == "lsp" {
         r, err := c.GetLsp(context.Background(), &pb.LspRequest{ShLsp: ""})
         if err != nil {
-            log.Fatalf("Unable to get state: %v", err)
+            glog.Errorf("Unable to get state: %v", err)
         }
-        log.Printf("Intf response %s", r)
+        glog.V(3).Infof("Lsp response %s", r)
+        return r
+    } else if req == "topo" {
+        r, err := c.GetTopo(context.Background(), &pb.TopoRequest{ShTopo: ""})
+        if err != nil {
+            glog.Errorf("Unable to get state: %v", err)
+        }
+        glog.V(3).Infof("Topo response %s", r)
         return r
     } 
     return nil
@@ -69,7 +75,7 @@ func TestSystemIDConfig(t *testing.T) {
     nodeIpAddresses := []string{os.Getenv("node1"), os.Getenv("node2"), os.Getenv("node3")}
     for k := 0; k < len(nodeIpAddresses); k++ {
         rsp := ConfigureSid(nodeIpAddresses[k], GRPC_CFG_SERVER_PORT, fmt.Sprintf("1111.1111.111%d", k + 1))
-        fmt.Println(rsp.Ack)
+//         fmt.Println(rsp.Ack)
         if ! strings.Contains(rsp.Ack, "successfully") {
             t.Fail()
         }
@@ -108,14 +114,57 @@ func TestAdjBringUp(t *testing.T) {
 }
 
 func TestLspFlooding(t *testing.T) {
+//     setDebugs("3")
     nodeIpAddresses := []string{os.Getenv("node1"), os.Getenv("node2"), os.Getenv("node3")}
-    time.Sleep(7000 * time.Millisecond)  // Give it some time for LSP flooding
-    // Once all the adjacencies are up, print the LSPs
+    time.Sleep(10000 * time.Millisecond)  // Give it some time for LSP flooding
+    // Ensure UpdateDB has been replicated on each node
+    // Expecting to see three lsps 1111, 1112, 1113
+    lspCheck := make(map[string]bool)
+    lspCheck["1111.1111.1111"] = false
+    lspCheck["1111.1111.1112"] = false
+    lspCheck["1111.1111.1113"] = false
     for k := 0; k < len(nodeIpAddresses); k++ {
         tmp := Get(nodeIpAddresses[k], GRPC_CFG_SERVER_PORT, "lsp")
         lsps := tmp.(*pb.LspReply).Lsp
         for _, lsp := range lsps {
-            log.Printf("LSP %v", lsp)
+            glog.V(1).Infof("%v\n", lsp[:14])
+            if _, ok := lspCheck[lsp[:14]]; ! ok {
+                // Unknown lsp
+                glog.V(1).Infof("Unexpected LSP in database %v", lsp[:14])
+                t.Fail()
+            } else {
+                lspCheck[lsp[:14]] = true
+            }
+        }
+        // Confirm that all expected lsps are present for this node, then reset to false
+        for lsp, present := range lspCheck {
+            if ! present {
+                glog.V(1).Infof("Failed to find LSP %v in database on node %v", lsp[:14], nodeIpAddresses[k])
+                t.Fail()
+            } else {
+                // Reset it for the next node
+                lspCheck[lsp] = false
+            }
+        } 
+    }
+//     setDebugs("0")
+}
+
+func TestTopo(t *testing.T) {
+//     setDebugs("3")
+    nodeIpAddresses := []string{os.Getenv("node1"), os.Getenv("node2"), os.Getenv("node3")}
+    // Just a sanity check to make sure the topo contains all nodes
+    // More detailed tests in the decision test cases
+    for k := 0; k < len(nodeIpAddresses); k++ {
+        tmp := Get(nodeIpAddresses[k], GRPC_CFG_SERVER_PORT, "topo")
+        topos := tmp.(*pb.TopoReply).Topo
+        // + 1 is because we get the LSP ID + the # number of nodes in the topology
+        if len(topos) != (len(nodeIpAddresses) + 1){
+            glog.V(3).Infof("Expecting %v topos, got %v", len(nodeIpAddresses) + 1, len(topos))
+            t.Fail()
+        }
+        for _, topo := range topos[1:] {
+            glog.V(3).Infof("Topo %v", topo)
         }
     }
 }

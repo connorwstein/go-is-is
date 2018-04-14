@@ -15,17 +15,21 @@ func TopoDBInit() {
     TopoDB = &IsisDB{DBLock: sync.Mutex{}, Root: nil}
 }
 
-func isisDecision(spfEventQueue chan bool){
+func isisDecision(triggerSPF chan bool){
     // Implementation - similar to the other modules, there is a goroutine 
     // which is blocked on an event channel. The events coming on the channel are simple signals 
     // that the SPF database should be recomputed. Maybe if we want to get fancy they could indicate whether you 
     // only need to do a partial recompute.
     // This goroutine is not interface specific, rather it is for the entire update db
     for {
-//         spfEvent := <- spfEventQueue
-//         // Run SPF on the update db
-//         // and update the decision db
-//         computeSPF(UpdateDB, DecisionDB, cfg.sid)
+        glog.V(2).Infof("SPF: Waiting for SPF event")
+        spf := <- triggerSPF
+        glog.V(2).Infof("SPF: Received trigger")
+        // Run SPF on the update db to build the network topology
+        if spf {
+            glog.V(2).Infof("SPF: Compute SPF")
+            computeSPF(UpdateDB, TopoDB, cfg.sid, cfg.interfaces)
+        }
     }
 }
 
@@ -115,6 +119,7 @@ func computeSPF(updateDB *IsisDB, topoDB *IsisDB, localSystemID string, localInt
     // Probably some way to optimize this by not taking both locks
     // Update the decision DB
     // The local systemID is our starting point for dijkstra
+    glog.V(2).Info("SPF: Running SPF, taking update database lock")
     updateDB.DBLock.Lock()
     // SPF time
     // Decision DB should still be keyed by system ID, but its contents should be prefixes and their associated costs and next hops?
@@ -132,6 +137,11 @@ func computeSPF(updateDB *IsisDB, topoDB *IsisDB, localSystemID string, localInt
             paths = append(paths, &Triple{systemID: localSystemID}) // Leave distance 0 and adj nil
             localSystemIDIndex = i
         }
+    }
+    if localSystemIDIndex == -1 {
+        glog.Errorf("Unable to find our own lsp, cannot compute SPF")
+        updateDB.DBLock.Unlock()
+        return
     }
     // Yeah, yeah this is slow. Remove our own lsp
     unknown = append(unknown[:localSystemIDIndex], unknown[localSystemIDIndex + 1:]...)
@@ -194,5 +204,6 @@ func computeSPF(updateDB *IsisDB, topoDB *IsisDB, localSystemID string, localInt
     for _, path := range paths {
         topoDB.Root = AvlInsert(topoDB.Root, SystemIDToKey(path.systemID), path, true)
     }    
+    AvlPrint(topoDB.Root)
     updateDB.DBLock.Unlock()
 }

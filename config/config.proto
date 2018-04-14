@@ -14,6 +14,7 @@ service State {
     rpc GetIntf (IntfRequest) returns (IntfReply) {}
     rpc GetLsp (LspRequest) returns (LspReply) {}
     rpc GetSystemID (SystemIDRequest) returns (SystemIDReply) {}
+    rpc GetTopo (TopoRequest) returns (TopoReply) {}
 }
 
 message IntfRequest {
@@ -36,6 +37,16 @@ message LspReply {
     repeated string lsp = 1;
 }
 
+message TopoRequest {
+    string shTopo = 1; 
+}
+
+message TopoReply {
+    // Similar to interface requests, can specify a specific lsp
+    // or an empty string will return all of them
+    repeated string topo = 1;
+}
+
 message SystemIDRequest {
     string shSystemID = 1;
 }
@@ -52,3 +63,5 @@ message SystemIDCfgRequest {
 message SystemIDCfgReply {
     string ack = 1;
 }
+
+

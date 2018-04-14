@@ -6,10 +6,10 @@ import (
     "flag"
 )
 
-func turnFlagsOn() {
-    // Need this so PrintUpdateDB shows up during test run output
+func setDebugs(verbosity string) {
+    // Debugging failed testcase utility
     flag.Set("alsologtostderr", "true")
-    flag.Set("v", "2")
+    flag.Set("v", verbosity)
     flag.Parse()
 }
 

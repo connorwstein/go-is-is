@@ -119,8 +119,8 @@ func floodNewLsp(receiveIntf *Intf, receivedLsp *IsisLsp) {
     }
 }
 
-func isisUpdateInput(receiveIntf *Intf, update chan []byte) {
-    // TODO: Receive update LSPs and flood them along
+// func isisUpdateInput(receiveIntf *Intf, update chan []byte) {
+func isisUpdateInput(receiveIntf *Intf, update chan []byte, triggerSPF chan bool) {
     // Need to flood it along to every interface, except the one it came from
     // The one it came from is the one we are listening on
     // This lsp is a raw buffer [READ_BUF_SIZE]byte, need to deserialize
@@ -131,8 +131,9 @@ func isisUpdateInput(receiveIntf *Intf, update chan []byte) {
         glog.V(2).Infof(hex.Dump(lsp[:]))
         // Check if we already have this LSP, if not, then insert it
         // into our own DB an flood it along to all the other interfaces we have
-        // TODO: if we already have a copy and the sequence number is newer, overwrite.
-        // if we have a newer copy, send the newer copy back to the source 
+        // If we already have a copy and the sequence number is newer, overwrite.
+        // TODO: If we have a newer copy, send the newer copy back to the source 
+        spf := false
         UpdateDB.DBLock.Lock()
         tmp := AvlSearch(UpdateDB.Root, receivedLsp.Key)
         if tmp == nil {
@@ -140,6 +141,8 @@ func isisUpdateInput(receiveIntf *Intf, update chan []byte) {
             glog.Infof("Adding new lsp %s (%v) to DB", system_id_to_str(receivedLsp.LspID[:6]), receivedLsp.Key)
             UpdateDB.Root = AvlInsert(UpdateDB.Root, receivedLsp.Key, receivedLsp, false)
             PrintUpdateDB(UpdateDB.Root)
+            // Receiving a brand new LSP triggers an SPF
+            spf = true
             floodNewLsp(receiveIntf, receivedLsp)
         } else {
             // We do have this LSP, check if the sequence number is newer than the current version we have if it is then update
@@ -149,10 +152,14 @@ func isisUpdateInput(receiveIntf *Intf, update chan []byte) {
                 glog.Infof("Overwriting new lsp %s (%v) to DB", system_id_to_str(receivedLsp.LspID[:6]), receivedLsp.Key)
                 UpdateDB.Root = AvlInsert(UpdateDB.Root, receivedLsp.Key, receivedLsp, true)
                 PrintUpdateDB(UpdateDB.Root)
+                // Receiving newer LSP also triggers an SPF
+                spf = true
                 floodNewLsp(receiveIntf, receivedLsp)
             }
         }
         UpdateDB.DBLock.Unlock()
+        glog.V(2).Infof("SPF trigger %v", spf)
+        triggerSPF <- spf
     }
 }
 
@@ -181,7 +188,7 @@ func isisUpdate(intf *Intf, send chan []byte) {
                     glog.Infof("Flooding %s out %s", system_id_to_str(lspFloodState.LspID[:6]), intf.name)
                     send <- buildEthernetFrame(l1_multicast, getMac(intf.name), serializeLsp(lsp.CoreLsp))
                     // No ACK required for LAN interfaces
-                    lspFloodState.SRM = false
+                    //lspFloodState.SRM = false
                 }
             }
         }
@@ -347,7 +354,7 @@ func getNeighborTLV(interfaces []*Intf) *IsisTLV {
         metric := [4]byte{0x00, 0x00, 0x00, 0x0a}
         neighborsTlv.tlv_value = append(neighborsTlv.tlv_value, metric[:]...)
         neighborsTlv.tlv_value = append(neighborsTlv.tlv_value, intf.adj.neighbor_system_id[:]...)
-        glog.Infof("adding neighbor system id %s", system_id_to_str(intf.adj.neighbor_system_id[:]))
+        glog.V(2).Infof("adding neighbor system id %s", system_id_to_str(intf.adj.neighbor_system_id[:]))
         neighborsTlv.tlv_value = append(neighborsTlv.tlv_value, pseudoNodeId)
         neighborsTlv.tlv_length += 11 
     }
@@ -395,10 +402,10 @@ func GenerateLocalLsp() {
     tmp := AvlSearch(UpdateDB.Root, newLsp.Key)
     UpdateDB.DBLock.Unlock()
     if tmp == nil {
-        glog.Infof("Failed to generate local LSP %s", system_id_to_str(newLsp.LspID[:6]))
+        glog.V(1).Infof("Failed to generate local LSP %s", system_id_to_str(newLsp.LspID[:6]))
     } else {
         lsp := tmp.(*IsisLsp)
-        glog.Infof("Successfully generated local LSP %s seq num %d", system_id_to_str(lsp.LspID[:6]), sequenceNumber)
+        glog.V(1).Infof("Successfully generated local LSP %s seq num %d", system_id_to_str(lsp.LspID[:6]), sequenceNumber)
     }
     // Lsp has been created, need to flood it on all interfaces
     for _, intf := range cfg.interfaces {

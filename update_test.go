@@ -2,8 +2,8 @@ package main
 
 import (
     "testing"
-    "fmt"
     "net"
+    "github.com/golang/glog"
     "encoding/binary"
 )
 
@@ -20,8 +20,8 @@ func TestUpdateLocalLspGen(t *testing.T) {
     testLspID := [8]byte{0x11, 0x11, 0x11, 0x11, 0x11, 0x12, 0x00, 0x00}
     tmp := AvlSearch(UpdateDB.Root, binary.BigEndian.Uint64(testLspID[:]))
     lsp := tmp.(*IsisLsp)
-    fmt.Println(cfg.interfaces[0].lspFloodStates[0]) 
-    fmt.Println(lsp) 
+    glog.V(2).Infof("%v", cfg.interfaces[0].lspFloodStates[0]) 
+    glog.V(2).Infof("%v", lsp) 
     // SRM Flag should be set on eth0
     if ! cfg.interfaces[0].lspFloodStates[binary.BigEndian.Uint64(testLspID[:])].SRM {
         t.Fail()
@@ -42,7 +42,7 @@ func TestReachTLV(t *testing.T) {
         } 
     }
     tlv := getIPReachTLV(interfaces)
-    fmt.Println(tlv)
+    glog.V(2).Infof("%v", tlv)
     // 12 bytes per entry in the TLV
     if int(tlv.tlv_type) != 128 || int(tlv.tlv_length) != numRoutesPerInterface*numInterfaces*12 {
         t.Fail()

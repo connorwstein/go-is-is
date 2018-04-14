@@ -3,7 +3,6 @@ package main
 import (
     "flag"
     "strings"
-    "fmt"
     "sync"
     "bytes"
     "golang.org/x/sys/unix"
@@ -30,7 +29,7 @@ const (
     GRPC_CFG_SERVER_PORT = "50051"
     RECV_LOG_PREFIX = "RECV:"
     SEND_LOG_PREFIX = "SEND:"
-    CHAN_BUF_SIZE = 100
+    CHAN_BUF_SIZE = 1000
 )
 
 type Config struct {
@@ -113,7 +112,7 @@ func getGID() uint64 {
 }
 
 func cleanup() {
-    fmt.Println("cleanup")
+    glog.Infof("Cleanup")
 }
 
 type server struct{}
@@ -163,7 +162,20 @@ func (s *server) GetLsp(ctx context.Context, in *pb.LspRequest) (*pb.LspReply, e
     reply.Lsp = make([]string, 0)
     nodes := AvlGetAll(UpdateDB.Root) 
     for _, node := range nodes {
-        reply.Lsp = append(reply.Lsp, system_id_to_str(node.data.(*IsisLsp).LspID[:6]))
+        reply.Lsp = append(reply.Lsp, node.data.(*IsisLsp).String())
+    }
+    cfg.lock.Unlock()
+    return &reply, nil
+}
+
+func (s *server) GetTopo(ctx context.Context, in *pb.TopoRequest) (*pb.TopoReply, error) {
+    cfg.lock.Lock()
+    var reply pb.TopoReply
+    reply.Topo = make([]string, 0)
+    reply.Topo = append(reply.Topo, cfg.sid)
+    nodes := AvlGetAll(TopoDB.Root) 
+    for _, node := range nodes {
+        reply.Topo = append(reply.Topo, node.data.(*Triple).String())
     }
     cfg.lock.Unlock()
     return &reply, nil
@@ -209,7 +221,7 @@ func initInterfaces() {
         for _, a := range addrs {
             switch v := a.(type) {
             case *net.IPNet: // Checking if this type of address a (v) is a pointer to a net.IPNet struct
-                glog.Info("Found interface ", i.Name, ": ",  v)
+                glog.V(1).Info("Found interface ", i.Name, ": ",  v)
                 // Only work with v4 addresses for now
                 if v.IP.To4() != nil {
                     var new_intf Intf
@@ -242,7 +254,7 @@ func initInterfaces() {
                     index++
                 } else {
                     // TODO: ipv6 support
-                    glog.Info("IPV6 interface ", i.Name, " not supported")
+                    glog.V(1).Info("IPV6 interface ", i.Name, " not supported")
                 }
             default:
                 glog.Errorf("Not an ip address %+v\n", v)
@@ -293,14 +305,18 @@ func main() {
     var helloChans, updateChans []chan []byte
     var sendChans []chan []byte
     for i := 0; i < len(cfg.interfaces); i++ {
-        helloChans = append(helloChans, make(chan []byte, CHAN_BUF_SIZE))
-        updateChans = append(updateChans, make(chan []byte, CHAN_BUF_SIZE))
-        sendChans = append(sendChans, make(chan []byte, CHAN_BUF_SIZE))
+        helloChans = append(helloChans, make(chan []byte))
+        updateChans = append(updateChans, make(chan []byte))
+        sendChans = append(sendChans, make(chan []byte))
     }
+    triggerSPF := make(chan bool)
     for i, intf := range cfg.interfaces {
+        // Waiting to compute topology based on update db
+        go isisDecision(triggerSPF)
+
         // The updateInput goroutine is responsible for setting the SRM flag if required to trigger
         // the flooding 
-        go isisUpdateInput(intf, updateChans[i])
+        go isisUpdateInput(intf, updateChans[i], triggerSPF)
         // Periodically check for SRMs on each interface
         go isisUpdate(intf, sendChans[i])
 
@@ -314,7 +330,6 @@ func main() {
         // chan for that interface
         go recvPdus(intf.name, helloChans[i], updateChans[i])
         go sendPdus(intf.name, sendChans[i])
-
 
     }
     // Start the gRPC server for accepting configuration (CLI commands)
