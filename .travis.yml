@@ -28,7 +28,7 @@ before_script:
   - docker-compose build
   - docker-compose up -d 
   # Adjust docker bridge settings
-  - scripts/config_docker_machine.sh
+  - sudo scripts/config_docker_machine.sh
 
 script:
     - docker exec -d test_client /bin/bash -c "/opt/go-is-is/build.sh"
