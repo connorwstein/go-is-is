@@ -1,82 +1,48 @@
-This project is an implementation of the major aspects of the IS-IS protocol. There may be slight deviations from the actual RFC.
+[![Build Status](https://travis-ci.org/connorwstein/go-is-is.svg?branch=master)](https://travis-ci.org/connorwstein/go-is-is)
 
-The goals of this project are to create a routing protocol implementation which is:
-- Designed with TDD - this is probably the most important 
-- Leverages golang for concurrency primitives
-- Designed with telemetry in mind from the beginning 
-- Extremely easy to test at scale
-- Strictly interfaced with programmatically - no cli 
+This project is an implementation of the major aspects of the IS-IS routing protocol, although it is by no means the whole exact RFC. The idea is given an arbitrarily complex network of containers, the go-is-is process could be run on each one of them, learn the whole topology and then install routes in the containers so containers will be reachable across networks.
 
-Most of these goals are motivated by observing the shortcomings of commercial implementations.
-
-Traditional implementations use only a handful of threads as each one eats up something on the order of a few MB of memory. In C, having a thread per interface is out of the question because large routers can have thousands of interfaces which would mean GB of memory, but in golang it should be possible to have a goroutine per interface and not use a ton of memory. 
-
-The nodes are represented by docker containers and a topology can be brought up with docker-compose. Node configuration and state queries are accepted through gRPC. Docker containers are placed in separate networks and then the topology is learned though IS-IS. The test topology uses 3 nodes and 2 networks:
+For example in the topology:
 
        net1         net2 
 node1 <----> node2 <----> node3
 
-Node 1 and 3 are members of two different networks and node 2 is a member of both with two virtual ethernet interfaces. The test client node which pushes the config in is a member of both networks so it can reach all nodes. Since IS-IS frames are embedded directly in layer 2 packets with no layer 3 header, special settings are required for the linux kernel. See config_docker_machine.sh for details.
+Node 1 and 3 are members of two different networks and node 2 is a member of both with two virtual ethernet interfaces. After the IS-IS protocol has established neighbors, exchanged LSPs and ran SPF on the LSP database, then each node will know the full topology of the network and know the shortest path to each node. Node 1 will know that he has to go through node 2 to get to node 3. 
+
+Node configuration and state queries are accepted through gRPC and state information can also be streamed out in the same fashion. The test client node which pushes the config in is a member of all networks so it can reach all nodes. Also since IS-IS frames are embedded directly in layer 2 packets with no layer 3 header, special settings are required for the linux kernel. See config_docker_machine.sh for details.
 
 USAGE:
 Topology bring up:
 docker-compose build
 docker-compose up
 
-Start the IS-IS process on each node:
-docker-compose exec -it node1 bash
-./main -logtostderr=true
-docker-compose exec -it node2 bash
-./main -logtostderr=true
-docker-compose exec -it node3 bash
-./main -logtostderr=true
+Build the IS-IS binary and start it on each node:
+docker exec -d test_client /bin/bash -c "/opt/go-is-is/build.sh"
+docker exec -d test_client /bin/bash -c "/opt/go-is-is/scripts/start_all.sh"
 
 Run the tests:
-docker exec -it test_client bash
-./run_tests
+docker exec test_client /opt/go-is-is/run_tests.sh
 
-Logging levels:
-v1 --> detailed database updates
-v2 --> locking and TLV data
+See all the container IPs in the topology:
+docker exec test_client /bin/bash -c "go run /opt/go-is-is/scripts/get_ips.sh"
+
+Show the running state of each node:
+docker exec test_client /bin/bash -c "go run /opt/go-is-is/scripts/show_run.go <IP OF CONTAINER>"
 
 DONE:
-- The adjacency test configures the SIDs on both nodes via gRPC, which causes them to start flooding the docker bridge with the multicast mac address and establish adjacencies with any other containers running the is-is program
 - Adjacency establishment for nodes with multiple interfaces
 - LSP exchange to build a LSP database on each node
-    - For this topology the final LSP DB on each node is
-        1111.00-00  // Node 1
-            TLV 128 Internal Reachability
-                Prefix testnet1 metric 10
-            TLV 2 IS Neighbors 
-                1112.00-00
-        1112.00-00 // Node 2 
-            TLV 128 Internal Reachability
-                Prefix testnet1 metric 10
-                Prefix testnet2 metric 10 
-            TLV 2 IS Neighbors
-                1111.00-00
-                1113.00-00
-        1113.00-00 // Node 3
-            TLV 128 Internal Reachability
-                Prefix testnet2 metric 10
-            TLV 2 IS Neighbors
-                1112.00-00
-- Need to support sequence numbers of LSPs to overwrite if we get a newer sequence number. Currently node2 will form an adjacency with either node 1 or 3 first, generate and send out its LSP. Then it will do that again once the second adjacency forms, but node1 and 3 will not update their databases when they get this new LSP, as they already have an LSP from node2.
-
-TODO:
-- Might be able to convert the structs to use byte slices for everything rather than fixed sizes
-- Interface information should probably be a map not a list
+- Support sequence numbers of LSPs to overwrite if we get a newer sequence number
 - Using the metrics in TLV 2 and TLV 128, run SPF on the LSP database. SPF runs on a graph where
 nodes are IS-IS instances, adjacencies are edges and directly connected prefixes are leaf nodes.
-All edges have a length/metric of 10. The important thing that we should see is the following on node 1:
 
-    172.19.0.0/16 next hop is node 2 and metric is 20 
-
-That would indicate the metric and next hop calculation is correct. Probably need more complex topology for 
-fully testing SPF though.
+TODO:
+- More complex topology for fully testing SPF
+- Actually install the routes to make all containers reachable
+- Might be able to convert the structs to use byte slices for everything rather than fixed sizes
+- Interface information should probably be a map not a list
 - Replace sleeps with timers
 - Detect adjacency failures (interface flaps etc.)
-- Clean up naming convention
 - More unit tests
 - Scale tests 
 - Performance tests
@@ -91,6 +57,3 @@ NICE TO HAVE:
 - Crypto auth
 - Add checksums
 - Support hostname
-
-Notes
-- It is much easier to test functionality if it is done in a functional style and does not rely on tons of global mutating state. Keep this global mutating state to a minimum and then whatever is absolutely required should be tested with system_test.go

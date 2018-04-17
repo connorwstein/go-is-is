@@ -1,6 +1,5 @@
-// TODO: Run SPF on the update db 
-// to produce another AVL tree which is the decision db with
-// all the best routes
+// Decision process in the IS-IS protocol.
+// Computes the shortest paths to all other nodes based on the update database information.
 package main
 
 import (
@@ -11,7 +10,22 @@ import (
 
 var TopoDB *IsisDB
 
-func TopoDBInit() {
+type Triple struct {
+    // Either systemID or prefix is set, not both
+    systemID string
+    distance uint32
+    adj *Adjacency
+}
+
+func (t Triple) String() string {
+    if t.adj == nil {
+        return fmt.Sprintf("SystemID %s Distance %d Next Hop %v", t.systemID, t.distance, t.adj)
+    } else {
+        return fmt.Sprintf("SystemID %s Distance %d Next Hop %s Intf %s", t.systemID, t.distance, systemIDToString(t.adj.neighborSystemID), t.adj.intfName)
+    }
+}
+
+func topoDBInit() {
     TopoDB = &IsisDB{DBLock: sync.Mutex{}, Root: nil}
 }
 
@@ -33,21 +47,6 @@ func isisDecision(triggerSPF chan bool){
     }
 }
 
-type Triple struct {
-    // Either systemID or prefix is set, not both
-    systemID string
-    distance uint32
-    adj *Adjacency
-}
-
-func (t Triple) String() string {
-    if t.adj == nil {
-        return fmt.Sprintf("SystemID %s Distance %d Next Hop %v", t.systemID, t.distance, t.adj)
-    } else {
-        return fmt.Sprintf("SystemID %s Distance %d Next Hop %s Intf %s", t.systemID, t.distance, system_id_to_str(t.adj.neighbor_system_id), t.adj.intfName)
-    }
-}
-
 func printPaths(prefix string, paths []*Triple) {
     for _, path := range paths {
         glog.V(2).Infof("%v", path)
@@ -60,7 +59,7 @@ func getAdjacencies(source *Triple, unknown []*AvlNode) []*Triple {
     trips := make([]*Triple, 0)
     for _, node := range unknown {
         lsp := node.data.(*IsisLsp)
-        if source.systemID == system_id_to_str(lsp.LspID[:6]) {
+        if source.systemID == systemIDToString(lsp.LspID[:6]) {
             glog.V(2).Infof("SPF: Found our systemID %s", source.systemID)
             // Found our lsp, grabs its neighbors
             neighbors := lookupNeighbors(lsp)
@@ -133,7 +132,7 @@ func computeSPF(updateDB *IsisDB, topoDB *IsisDB, localSystemID string, localInt
     unknown := AvlGetAll(updateDB.Root)
     localSystemIDIndex := -1
     for i, node := range unknown {
-        if system_id_to_str(node.data.(*IsisLsp).LspID[:6]) == localSystemID {
+        if systemIDToString(node.data.(*IsisLsp).LspID[:6]) == localSystemID {
             paths = append(paths, &Triple{systemID: localSystemID}) // Leave distance 0 and adj nil
             localSystemIDIndex = i
         }
@@ -151,7 +150,7 @@ func computeSPF(updateDB *IsisDB, topoDB *IsisDB, localSystemID string, localInt
     // The system id in the triple can also be a prefix. In real IS-IS however, this would only happen in a L2 router.
     for _, intf := range localInterfaces {
         if intf.adj.state == "UP" {
-            tent = append(tent, &Triple{systemID: system_id_to_str(intf.adj.neighbor_system_id), distance: intf.adj.metric, adj: intf.adj})
+            tent = append(tent, &Triple{systemID: systemIDToString(intf.adj.neighborSystemID), distance: intf.adj.metric, adj: intf.adj})
         }
     } 
     // At each step of the algorithm, the TENT list is examined, and the node with the least cost from the source is moved into PATHS. 
@@ -202,7 +201,7 @@ func computeSPF(updateDB *IsisDB, topoDB *IsisDB, localSystemID string, localInt
     } 
     printPaths("path", paths)
     for _, path := range paths {
-        topoDB.Root = AvlInsert(topoDB.Root, SystemIDToKey(path.systemID), path, true)
+        topoDB.Root = AvlInsert(topoDB.Root, systemIDToKey(path.systemID), path, true)
     }    
     AvlPrint(topoDB.Root)
     updateDB.DBLock.Unlock()

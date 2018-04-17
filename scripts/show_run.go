@@ -6,7 +6,6 @@ import (
     "os"
     pb "../config"
     "google.golang.org/grpc"
-//     "log"
     "strings"
     "golang.org/x/net/context"
 )
@@ -42,6 +41,7 @@ func main() {
         fmt.Println("LSP:", lsp)
     }
 
+    fmt.Println("TOPO:")
     showTopo, err := c.GetTopo(context.Background(), &pb.TopoRequest{ShTopo: ""})
     if err != nil {
         fmt.Printf("Unable to get state: %v", err)

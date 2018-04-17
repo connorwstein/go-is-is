@@ -10,11 +10,11 @@ import (
 func TestUpdateLocalLspGen(t *testing.T) {
     initConfig()
     cfg.sid = "1111.1111.1112"
-    adj := Adjacency{state: "UP", neighbor_system_id: []byte{0x11, 0x11, 0x11, 0x11, 0x11, 0x11}}
+    adj := Adjacency{state: "UP", neighborSystemID: []byte{0x11, 0x11, 0x11, 0x11, 0x11, 0x11}}
     initInterfaces()
     cfg.interfaces[0].adj = &adj
-    UpdateDBInit()
-    GenerateLocalLsp()
+    updateDBInit()
+    generateLocalLsp()
 
     // Check whether it is in the LspDB 
     testLspID := [8]byte{0x11, 0x11, 0x11, 0x11, 0x11, 0x12, 0x00, 0x00}
@@ -44,7 +44,7 @@ func TestReachTLV(t *testing.T) {
     tlv := getIPReachTLV(interfaces)
     glog.V(2).Infof("%v", tlv)
     // 12 bytes per entry in the TLV
-    if int(tlv.tlv_type) != 128 || int(tlv.tlv_length) != numRoutesPerInterface*numInterfaces*12 {
+    if int(tlv.typeTLV) != 128 || int(tlv.lengthTLV) != numRoutesPerInterface*numInterfaces*12 {
         t.Fail()
     }
 }

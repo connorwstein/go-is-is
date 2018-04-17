@@ -1,6 +1,4 @@
-// Functions to send and receive ethernet frames
-// Should be agnostic to the type of data being sent
-// Lowest layer
+// Ethernet layer
 package main
 
 import (
@@ -28,21 +26,21 @@ var RawSocks map[string][2]*RawSock // Map of interfaces to send and receive soc
 type IsisPDUHeader struct {
     // Common 8 byte header to all PDUs
     // Note that the fields must be exported for the binary.Read 
-    Intra_domain_routeing_protocol_discriminator byte // 0x83
-    Pdu_length byte
-    Protocol_id byte
-    System_id_length byte
-    Pdu_type byte // first three bits are reserved and set to 0, next 5 bits are pdu type
+    IntraDomainRouteingProtocolDiscriminator byte // 0x83
+    LengthPDU byte
+    ProtocolID byte
+    SystemIDLength byte
+    TypePDU byte // first three bits are reserved and set to 0, next 5 bits are pdu type
     Version byte
     Reserved byte
-    Maximum_area_addresses byte
+    MaximumAreaAddresses byte
 }
 
 type IsisTLV struct {
-    next_tlv *IsisTLV
-    tlv_type byte
-    tlv_length byte
-    tlv_value []byte
+    nextTLV *IsisTLV
+    typeTLV byte
+    lengthTLV byte
+    valueTLV []byte
 }
 
 func htons(host uint16) uint16 {
@@ -144,12 +142,12 @@ func buildEthernetFrame(dst []byte, src []byte, payload []byte) []byte {
     // output needs to be a large byte slice which can be directly sent with Write
     // Ethernet frame needs dst, src, type, payload
     // TODO: figure out how to use encoding/gob here 
-    ether_type := []byte{0x08, 0x00}
+    etherType := []byte{0x08, 0x00}
     var buf bytes.Buffer
     // Can't write binary with nil pointer how to handle the TLVs?
     binary.Write(&buf, binary.BigEndian, dst)
     binary.Write(&buf, binary.BigEndian, src)
-    binary.Write(&buf, binary.BigEndian, ether_type)
+    binary.Write(&buf, binary.BigEndian, etherType)
     binary.Write(&buf, binary.BigEndian, payload)
     return buf.Bytes()
 }
@@ -176,8 +174,8 @@ func ethernetIntfInit(ifname string) {
 
 func sendFrame(frame []byte, ifname string) {
     // Take in a byte slice payload and send it
-    num_bytes, e := RawSocks[ifname][0].Write(frame)
-    if num_bytes <= 0 {
+    numBytes, e := RawSocks[ifname][0].Write(frame)
+    if numBytes <= 0 {
         glog.Error(e.Error())
     }
 }
@@ -228,7 +226,7 @@ func recvPdus(ifname string, hello chan []byte, update chan []byte) {
         if pduType == 0x0F {
             hello <- buf  
         } else if pduType == 0x12 {
-            glog.Infof("Received an LSP %s",  system_id_to_str(buf[14+7+5: 14+7+5+6]))
+            glog.Infof("Received an LSP %s",  systemIDToString(buf[14+7+5: 14+7+5+6]))
             update <- buf
         }
     }

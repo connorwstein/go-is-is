@@ -5,6 +5,7 @@
 // The tests are run from a separate container
 // This is an example client which can be used to configure the IS-IS node
 // Will need the ip addresses of the other two containers
+// TODO: Given a topology which is a connected graph, make this system test generic enough to handle it
 package main
 
 import (
@@ -75,7 +76,6 @@ func TestSystemIDConfig(t *testing.T) {
     nodeIpAddresses := []string{os.Getenv("node1"), os.Getenv("node2"), os.Getenv("node3")}
     for k := 0; k < len(nodeIpAddresses); k++ {
         rsp := ConfigureSid(nodeIpAddresses[k], GRPC_CFG_SERVER_PORT, fmt.Sprintf("1111.1111.111%d", k + 1))
-//         fmt.Println(rsp.Ack)
         if ! strings.Contains(rsp.Ack, "successfully") {
             t.Fail()
         }

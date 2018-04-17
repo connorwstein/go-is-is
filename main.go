@@ -1,3 +1,4 @@
+// Go-is-is daemon 
 package main
 
 import (
@@ -62,7 +63,7 @@ type LspFloodState struct {
 
 type Adjacency struct {
     state string // Can be NEW, INITIALIZING or UP
-    neighbor_system_id []byte 
+    neighborSystemID []byte 
     metric uint32
     intfName string 
 }
@@ -70,7 +71,7 @@ type Adjacency struct {
 func getAdjacency(neighborSystemID string) *Adjacency {
     for i, _ := range cfg.interfaces {
         if cfg.interfaces[i].adj.state == "UP" {
-            if system_id_to_str(cfg.interfaces[i].adj.neighbor_system_id) == neighborSystemID {
+            if systemIDToString(cfg.interfaces[i].adj.neighborSystemID) == neighborSystemID {
                 return cfg.interfaces[i].adj
             }
         }
@@ -78,7 +79,7 @@ func getAdjacency(neighborSystemID string) *Adjacency {
     return nil
 }
 
-func system_id_to_str(system_id []byte) string {
+func systemIDToString(system_id []byte) string {
     // Byte slice should be 6 bytes
     if len(system_id) != 6 {
         return "" 
@@ -93,7 +94,7 @@ func system_id_to_str(system_id []byte) string {
     return result
 }
 
-func system_id_to_bytes(sid string) [6]byte {
+func systemIDToBytes(sid string) [6]byte {
     sid = strings.Replace(sid, ".", "", 6)
     var sidBytes []byte = make([]byte, 6, 6)
     sidBytes, _ = hex.DecodeString(sid)
@@ -147,7 +148,7 @@ func (s *server) GetIntf(ctx context.Context, in *pb.IntfRequest) (*pb.IntfReply
         if intf.adj.state != "UP" {
             interfaces_string += intf.prefix.String() + " " + intf.mask.String() + ", adjacency " + intf.adj.state
         } else {
-            interfaces_string += intf.prefix.String() + " " + intf.mask.String() + ", adjacency " + intf.adj.state + " with " + system_id_to_str(intf.adj.neighbor_system_id)
+            interfaces_string += intf.prefix.String() + " " + intf.mask.String() + ", adjacency " + intf.adj.state + " with " + systemIDToString(intf.adj.neighborSystemID)
         }
         reply.Intf[i] = interfaces_string
         intf.lock.Unlock()
@@ -288,8 +289,8 @@ func main() {
     initConfig()
     initInterfaces()
     ethernetInit()
-    UpdateDBInit()
-    TopoDBInit()
+    updateDBInit()
+    topoDBInit()
 
     for _, intf := range cfg.interfaces {
         ethernetIntfInit(intf.name) // Creates send/recv raw sockets

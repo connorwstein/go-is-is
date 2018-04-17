@@ -8,6 +8,7 @@ import (
 type DummyData struct {
     data int 
 }
+
 func (d DummyData) String() string {
     return fmt.Sprintf("%d", d.data)
 }

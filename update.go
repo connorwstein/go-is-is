@@ -1,10 +1,8 @@
-// Receive LSPs and flood them, also
-// generate our own LSPs
-// The update db should be an AVL tree where the keys are LSP IDs the values contain
-// the actual LSP
-
-// Since we are using broadcast links, after an adjacency is formed 
+// Update process in the IS-IS protocol.
+// Generates local LSPs, receives remote LSPs and floods them appropriately. Builds
+// the update database.
 package main
+
 import (
     "time"
     "fmt"
@@ -21,8 +19,11 @@ const (
     LSP_REFRESH = 5000
 )
 
+var UpdateDB *IsisDB
+var sequenceNumber uint32
+
 type IsisLspHeader struct {
-    PduLength [2]byte
+    LengthPDU [2]byte
     RemainingLifetime [2]byte
     LspID [8]byte // System id (6 bytes) + 1 byte PSN + 1 byte fragment 
     SequenceNumber [4]byte
@@ -33,7 +34,7 @@ type IsisLspHeader struct {
 type IsisLspCore struct {
     Header IsisPDUHeader
     LspHeader IsisLspHeader
-    FirstTlv *IsisTLV
+    FirstTLV *IsisTLV
 } 
 
 type IsisLsp struct {
@@ -45,31 +46,31 @@ type IsisLsp struct {
 
 func (lsp IsisLsp) String() string {
     var lspString bytes.Buffer
-    lspString.WriteString(fmt.Sprintf("%s", system_id_to_str(lsp.LspID[:6])))
-    var curr *IsisTLV = lsp.CoreLsp.FirstTlv
+    lspString.WriteString(fmt.Sprintf("%s", systemIDToString(lsp.LspID[:6])))
+    var curr *IsisTLV = lsp.CoreLsp.FirstTLV
     for curr != nil {
-        lspString.WriteString(fmt.Sprintf("\tTLV %d\n", curr.tlv_type))
-        lspString.WriteString(fmt.Sprintf("\tTLV size %d\n", curr.tlv_length))
-        if curr.tlv_type == 128 {
+        lspString.WriteString(fmt.Sprintf("\tTLV %d\n", curr.typeTLV))
+        lspString.WriteString(fmt.Sprintf("\tTLV size %d\n", curr.lengthTLV))
+        if curr.typeTLV == 128 {
             // This is a external reachability tlv
             // TODO: fix hard coding here
-            for i := 0; i < int(curr.tlv_length) / 12; i++ {
+            for i := 0; i < int(curr.lengthTLV) / 12; i++ {
                 var prefix net.IPNet 
-                prefix.IP = curr.tlv_value[i*12:i*12 + 4]
-                prefix.Mask = curr.tlv_value[i*12 + 4: i*12 + 8]
-                metric := curr.tlv_value[i*12 + 8: i*12 + 12]
+                prefix.IP = curr.valueTLV[i*12:i*12 + 4]
+                prefix.Mask = curr.valueTLV[i*12 + 4: i*12 + 8]
+                metric := curr.valueTLV[i*12 + 8: i*12 + 12]
                 lspString.WriteString(fmt.Sprintf("\t\t%s Metric %d\n", prefix.String(), binary.BigEndian.Uint32(metric[:])))
             }
-        } else if curr.tlv_type == 2 {
+        } else if curr.typeTLV == 2 {
             // This is a neighbors tlv, its length - 1 (to exclude the first virtualByteFlag) will be a multiple of 11
-            for i := 0; i < int(curr.tlv_length - 1)  / 11; i++ {
-                // Print out the neighbor system ids and metric 
-                metric := curr.tlv_value[i*11 + 4]
-                systemID := curr.tlv_value[(i*11 + 1 + 4):(i*11 + 1 + 4 + 6)]
-                lspString.WriteString(fmt.Sprintf("\t\t%s Metric %d\n", system_id_to_str(systemID), metric))
+            for i := 0; i < int(curr.lengthTLV - 1)  / 11; i++ {
+                // print out the neighbor system ids and metric 
+                metric := curr.valueTLV[i*11 + 4]
+                systemID := curr.valueTLV[(i*11 + 1 + 4):(i*11 + 1 + 4 + 6)]
+                lspString.WriteString(fmt.Sprintf("\t\t%s Metric %d\n", systemIDToString(systemID), metric))
             }
         }
-        curr = curr.next_tlv
+        curr = curr.nextTLV
     }            
     return lspString.String() 
 }
@@ -85,10 +86,7 @@ type Neighbor struct {
     metric uint32
 }
 
-var UpdateDB *IsisDB
-var sequenceNumber uint32
-
-func UpdateDBInit() {
+func updateDBInit() {
     UpdateDB = &IsisDB{DBLock: sync.Mutex{}, Root: nil}
 }
 
@@ -106,7 +104,7 @@ func floodNewLsp(receiveIntf *Intf, receivedLsp *IsisLsp) {
                 intf.lspFloodStates[receivedLsp.Key].SRM = false 
             }
         } else {
-            glog.Infof("Flooding new lsp %s out interface: %s", system_id_to_str(receivedLsp.LspID[:6]), intf.name)
+            glog.Infof("Flooding new lsp %s out interface: %s", systemIDToString(receivedLsp.LspID[:6]), intf.name)
             // If it is already there, just set SRM to true
             if _, inMap := intf.lspFloodStates[receivedLsp.Key]; ! inMap {
                 intf.lspFloodStates[receivedLsp.Key] = &LspFloodState{LspIDKey: receivedLsp.Key, LspID: receivedLsp.LspID, SRM: true, SSN: false}
@@ -119,7 +117,6 @@ func floodNewLsp(receiveIntf *Intf, receivedLsp *IsisLsp) {
     }
 }
 
-// func isisUpdateInput(receiveIntf *Intf, update chan []byte) {
 func isisUpdateInput(receiveIntf *Intf, update chan []byte, triggerSPF chan bool) {
     // Need to flood it along to every interface, except the one it came from
     // The one it came from is the one we are listening on
@@ -127,8 +124,8 @@ func isisUpdateInput(receiveIntf *Intf, update chan []byte, triggerSPF chan bool
     for {
         lsp := <- update
         receivedLsp := deserializeLsp(lsp[:])
-        glog.V(2).Infof("Got lsp update %s sequence number %d", system_id_to_str(receivedLsp.LspID[:6]), binary.BigEndian.Uint32(receivedLsp.CoreLsp.LspHeader.SequenceNumber[:]))
-        glog.V(2).Infof(hex.Dump(lsp[:]))
+        glog.V(2).Infof("Got lsp update %s sequence number %d", systemIDToString(receivedLsp.LspID[:6]), binary.BigEndian.Uint32(receivedLsp.CoreLsp.LspHeader.SequenceNumber[:]))
+        glog.V(4).Infof(hex.Dump(lsp[:]))
         // Check if we already have this LSP, if not, then insert it
         // into our own DB an flood it along to all the other interfaces we have
         // If we already have a copy and the sequence number is newer, overwrite.
@@ -138,9 +135,9 @@ func isisUpdateInput(receiveIntf *Intf, update chan []byte, triggerSPF chan bool
         tmp := AvlSearch(UpdateDB.Root, receivedLsp.Key)
         if tmp == nil {
             // Don't have this LSP so lets add it
-            glog.Infof("Adding new lsp %s (%v) to DB", system_id_to_str(receivedLsp.LspID[:6]), receivedLsp.Key)
+            glog.Infof("Adding new lsp %s (%v) to DB", systemIDToString(receivedLsp.LspID[:6]), receivedLsp.Key)
             UpdateDB.Root = AvlInsert(UpdateDB.Root, receivedLsp.Key, receivedLsp, false)
-            PrintUpdateDB(UpdateDB.Root)
+            printUpdateDB(UpdateDB.Root)
             // Receiving a brand new LSP triggers an SPF
             spf = true
             floodNewLsp(receiveIntf, receivedLsp)
@@ -149,9 +146,9 @@ func isisUpdateInput(receiveIntf *Intf, update chan []byte, triggerSPF chan bool
             lsp := tmp.(*IsisLsp)
             if binary.BigEndian.Uint32(lsp.CoreLsp.LspHeader.SequenceNumber[:]) < binary.BigEndian.Uint32(receivedLsp.CoreLsp.LspHeader.SequenceNumber[:]) {
                 // Received one is newer, update and flood
-                glog.Infof("Overwriting new lsp %s (%v) to DB", system_id_to_str(receivedLsp.LspID[:6]), receivedLsp.Key)
+                glog.Infof("Overwriting new lsp %s (%v) to DB", systemIDToString(receivedLsp.LspID[:6]), receivedLsp.Key)
                 UpdateDB.Root = AvlInsert(UpdateDB.Root, receivedLsp.Key, receivedLsp, true)
-                PrintUpdateDB(UpdateDB.Root)
+                printUpdateDB(UpdateDB.Root)
                 // Receiving newer LSP also triggers an SPF
                 spf = true
                 floodNewLsp(receiveIntf, receivedLsp)
@@ -167,11 +164,10 @@ func isisUpdate(intf *Intf, send chan []byte) {
     for {
         glog.V(2).Infof("Locking interface %s", intf.name)
         intf.lock.Lock()
-        glog.V(1).Info(intf.lspFloodStates)
         glog.Info("LSP DB:")
-        PrintUpdateDB(UpdateDB.Root)
+        printUpdateDB(UpdateDB.Root)
         glog.Infof("Intf %s Flood States", intf.name)
-        PrintLspFloodStates(intf)
+        printLspFloodStates(intf)
         // Check for SRM == true on this interface, if there
         // then use the key to get the full LSP, send it and clear the flag 
         for _, lspFloodState := range intf.lspFloodStates {
@@ -179,16 +175,16 @@ func isisUpdate(intf *Intf, send chan []byte) {
             if lspFloodState.SRM && intf.adj.state == "UP"{
                 tmp := AvlSearch(UpdateDB.Root, lspFloodState.LspIDKey)
                 if tmp == nil {
-                    glog.Errorf("Unable to find %s (%v) in lsp db", system_id_to_str(lspFloodState.LspID[:6]), lspFloodState.LspIDKey)
+                    glog.Errorf("Unable to find %s (%v) in lsp db", systemIDToString(lspFloodState.LspID[:6]), lspFloodState.LspIDKey)
                     glog.Errorf("Lsp DB:")
-                    PrintUpdateDB(UpdateDB.Root)
+                    printUpdateDB(UpdateDB.Root)
                 } else {
                     lsp := tmp.(*IsisLsp)
                     // Send it out that particular interface
-                    glog.Infof("Flooding %s out %s", system_id_to_str(lspFloodState.LspID[:6]), intf.name)
+                    glog.Infof("Flooding %s out %s", systemIDToString(lspFloodState.LspID[:6]), intf.name)
                     send <- buildEthernetFrame(l1_multicast, getMac(intf.name), serializeLsp(lsp.CoreLsp))
                     // No ACK required for LAN interfaces
-                    //lspFloodState.SRM = false
+                    lspFloodState.SRM = false
                 }
             }
         }
@@ -207,33 +203,33 @@ func deserializeLsp(raw_bytes []byte) *IsisLsp {
     binary.Read(buf, binary.BigEndian, &lspHeader)
     glog.V(2).Info("Binary decode common header:", commonHeader)
     glog.V(2).Info("Binary decode lsp header:", lspHeader)
-    var coreLsp *IsisLspCore = &IsisLspCore{Header: commonHeader, LspHeader: lspHeader, FirstTlv: nil}
+    var coreLsp *IsisLspCore = &IsisLspCore{Header: commonHeader, LspHeader: lspHeader, FirstTLV: nil}
     ethernetHeaderSize := 14
     tlv_offset := ethernetHeaderSize + int(unsafe.Sizeof(commonHeader)) + int(unsafe.Sizeof(lspHeader))
     // Check if the tlv offset is strictly less than the raw bytes, if it is then there must be TLVs present
     // keep reading until remaining tlv data is 0, building up a linked list of the TLVs as we go
-    remainingTlvBytes := len(raw_bytes) - tlv_offset
+    remainingTLVBytes := len(raw_bytes) - tlv_offset
     var curr *IsisTLV
     first := true
-    for remainingTlvBytes > 0 {
-        var currentTlv IsisTLV 
-        currentTlv.tlv_type = raw_bytes[tlv_offset]
-        currentTlv.tlv_length = raw_bytes[tlv_offset + 1]
+    for remainingTLVBytes > 0 {
+        var currentTLV IsisTLV 
+        currentTLV.typeTLV = raw_bytes[tlv_offset]
+        currentTLV.lengthTLV = raw_bytes[tlv_offset + 1]
         glog.V(2).Infof("TLV code %d received, length %d!\n", raw_bytes[tlv_offset], raw_bytes[tlv_offset + 1])
-        currentTlv.tlv_value = make([]byte, currentTlv.tlv_length)
-        copy(currentTlv.tlv_value, raw_bytes[tlv_offset + 2: tlv_offset + 2 + int(currentTlv.tlv_length)])
-        remainingTlvBytes -= (int(currentTlv.tlv_length) + 2) // + 2 for type and length
-        tlv_offset += int(currentTlv.tlv_length) + 2
+        currentTLV.valueTLV = make([]byte, currentTLV.lengthTLV)
+        copy(currentTLV.valueTLV, raw_bytes[tlv_offset + 2: tlv_offset + 2 + int(currentTLV.lengthTLV)])
+        remainingTLVBytes -= (int(currentTLV.lengthTLV) + 2) // + 2 for type and length
+        tlv_offset += int(currentTLV.lengthTLV) + 2
         if first {
-            coreLsp.FirstTlv = &currentTlv
-            curr = coreLsp.FirstTlv
+            coreLsp.FirstTLV = &currentTLV
+            curr = coreLsp.FirstTLV
             first = false
         } else {
-            curr.next_tlv = &currentTlv
-            curr = curr.next_tlv
+            curr.nextTLV = &currentTLV
+            curr = curr.nextTLV
         }
     }
-    var lsp IsisLsp = IsisLsp{Key: LspIDToKey(lspHeader.LspID), LspID: lspHeader.LspID, CoreLsp: coreLsp}
+    var lsp IsisLsp = IsisLsp{Key: lspIDToKey(lspHeader.LspID), LspID: lspHeader.LspID, CoreLsp: coreLsp}
     return &lsp
 }
 
@@ -241,50 +237,50 @@ func serializeLsp(lsp *IsisLspCore) []byte {
     var buf bytes.Buffer
     binary.Write(&buf, binary.BigEndian, lsp.Header)
     binary.Write(&buf, binary.BigEndian, lsp.LspHeader)
-    tlv := lsp.FirstTlv
+    tlv := lsp.FirstTLV
     for tlv != nil {
-        glog.V(2).Info("Serializing tlv:", tlv.tlv_type)
-        binary.Write(&buf, binary.BigEndian, tlv.tlv_type)
-        binary.Write(&buf, binary.BigEndian, tlv.tlv_length)
-        binary.Write(&buf, binary.BigEndian, tlv.tlv_value)
-        tlv = tlv.next_tlv
+        glog.V(2).Info("Serializing tlv:", tlv.typeTLV)
+        binary.Write(&buf, binary.BigEndian, tlv.typeTLV)
+        binary.Write(&buf, binary.BigEndian, tlv.lengthTLV)
+        binary.Write(&buf, binary.BigEndian, tlv.valueTLV)
+        tlv = tlv.nextTLV
     } 
     return buf.Bytes()
 }
 
-func SystemIDToKey(systemID string) uint64 {
+func systemIDToKey(systemID string) uint64 {
     var lspID [8]byte
-    bytes := system_id_to_bytes(systemID)
+    bytes := systemIDToBytes(systemID)
     copy(lspID[:], bytes[:])
-    return LspIDToKey(lspID)
+    return lspIDToKey(lspID)
 }
 
-func LspIDToKey(lspID [8]byte) uint64 {
+func lspIDToKey(lspID [8]byte) uint64 {
     var key uint64 = binary.BigEndian.Uint64(lspID[:]) // Keyed on the LSP ID's integer value
     return key
 }
 
-func SystemIDToLspID(systemID string) [8]byte {
+func systemIDToLspID(systemID string) [8]byte {
     var lspID [8]byte
-    bytes := system_id_to_bytes(systemID)
+    bytes := systemIDToBytes(systemID)
     copy(lspID[:], bytes[:])
     return lspID
 }
 
 func getNeighbors(neighborTLV *IsisTLV) []*Neighbor { 
     var neighbors []*Neighbor
-    neighborCount := (int(neighborTLV.tlv_length) - 1) / 11
+    neighborCount := (int(neighborTLV.lengthTLV) - 1) / 11
     glog.V(2).Infof("Neighbor count %d", neighborCount)
     neighbors = make([]*Neighbor, neighborCount)
     currentNeighbor := 0
     currentByte := 1 // Skip first virtual byte
     for currentNeighbor < neighborCount {
-        // Tlv value is 1 virtual byte flag and then n multiples of 4 byte metric and 6 byte system id + 1 byte pseudo-node id
+        // TLV value is 1 virtual byte flag and then n multiples of 4 byte metric and 6 byte system id + 1 byte pseudo-node id
         // Set pseudo-node id to 0 for now
         var neighbor Neighbor
-        neighbor.metric = binary.BigEndian.Uint32(neighborTLV.tlv_value[currentByte:currentByte + 4])
+        neighbor.metric = binary.BigEndian.Uint32(neighborTLV.valueTLV[currentByte:currentByte + 4])
         currentByte += 4
-        neighbor.systemID = system_id_to_str(neighborTLV.tlv_value[currentByte:currentByte + 6])
+        neighbor.systemID = systemIDToString(neighborTLV.valueTLV[currentByte:currentByte + 6])
         currentByte += 7 // Skip PSN
         glog.V(2).Infof("Current byte %d", currentByte)
         neighbors[currentNeighbor] = &neighbor
@@ -296,23 +292,23 @@ func getNeighbors(neighborTLV *IsisTLV) []*Neighbor {
 func lookupNeighbors(lsp *IsisLsp) []*Neighbor{
     // Given an LSP returns  list of neig
     //var neighbors []*Neighbor
-    currentTLV := lsp.CoreLsp.FirstTlv
+    currentTLV := lsp.CoreLsp.FirstTLV
     for currentTLV != nil {
-        if int(currentTLV.tlv_type) == 2 {
+        if int(currentTLV.typeTLV) == 2 {
             return getNeighbors(currentTLV)
         }
-        currentTLV = currentTLV.next_tlv
+        currentTLV = currentTLV.nextTLV
     }
-    glog.V(2).Infof("No neighbor tlv found in LSP %s", system_id_to_str(lsp.LspID[:6]))
+    glog.V(2).Infof("No neighbor tlv found in LSP %s", systemIDToString(lsp.LspID[:6]))
     return nil
 }
 
 func getIPReachTLV(interfaces []*Intf) *IsisTLV {
     // Doesn't handle duplicate prefixes reachable via different interfaces
-    var ipReachTlv IsisTLV;
-    ipReachTlv.next_tlv = nil
-    ipReachTlv.tlv_type = 128
-    ipReachTlv.tlv_length = 0 // Number of directly connected prefixes * 12 bytes 
+    var ipReachTLV IsisTLV;
+    ipReachTLV.nextTLV = nil
+    ipReachTLV.typeTLV = 128
+    ipReachTLV.lengthTLV = 0 // Number of directly connected prefixes * 12 bytes 
     // For each interface, need to look up the routes associated
     for _, intf := range interfaces {
         // Routes are already saved in each interface struct 
@@ -323,68 +319,67 @@ func getIPReachTLV(interfaces []*Intf) *IsisTLV {
                 // 4 bytes metric information
                 // 4 bytes for ip prefix
                 // 4 bytes for ip subnet mask
-                ipReachTlv.tlv_value = append(ipReachTlv.tlv_value, route.IP[:]...)
-                ipReachTlv.tlv_value = append(ipReachTlv.tlv_value, route.Mask[:]...)
+                ipReachTLV.valueTLV = append(ipReachTLV.valueTLV, route.IP[:]...)
+                ipReachTLV.valueTLV = append(ipReachTLV.valueTLV, route.Mask[:]...)
                 metric := [4]byte{0x00, 0x00, 0x00, 0x0a}
-                ipReachTlv.tlv_value = append(ipReachTlv.tlv_value, metric[:]...) // Using metric of 10 always (1 hop)
-                ipReachTlv.tlv_length += 12 
+                ipReachTLV.valueTLV = append(ipReachTLV.valueTLV, metric[:]...) // Using metric of 10 always (1 hop)
+                ipReachTLV.lengthTLV += 12 
             }
         }
     }
-    return &ipReachTlv
+    return &ipReachTLV
 }
 
-
 func getNeighborTLV(interfaces []*Intf) *IsisTLV {
-    var neighborsTlv IsisTLV;
-    neighborsTlv.next_tlv = nil
-    neighborsTlv.tlv_type = 2
-    neighborsTlv.tlv_length = 1  // Start at 1 to include virtual byte flag
+    var neighborsTLV IsisTLV;
+    neighborsTLV.nextTLV = nil
+    neighborsTLV.typeTLV = 2
+    neighborsTLV.lengthTLV = 1  // Start at 1 to include virtual byte flag
     var virtualByteFlag byte = 0x00;
     var pseudoNodeId byte = 0x00;
-    neighborsTlv.tlv_value = append(neighborsTlv.tlv_value, virtualByteFlag)
+    neighborsTLV.valueTLV = append(neighborsTLV.valueTLV, virtualByteFlag)
     // Loop though the interfaces looking for adjacencies to append
     for _, intf := range interfaces {
-        // Tlv value is 1 virtual byte flag and then n multiples of 4 byte metric and 6 byte system id + 1 byte pseudo-node id
+        // TLV value is 1 virtual byte flag and then n multiples of 4 byte metric and 6 byte system id + 1 byte pseudo-node id
         // Set pseudo-node id to 0 for now
         if intf.adj.state != "UP" {
             // Only send the adjacencies that we actually have
             continue
         }
         metric := [4]byte{0x00, 0x00, 0x00, 0x0a}
-        neighborsTlv.tlv_value = append(neighborsTlv.tlv_value, metric[:]...)
-        neighborsTlv.tlv_value = append(neighborsTlv.tlv_value, intf.adj.neighbor_system_id[:]...)
-        glog.V(2).Infof("adding neighbor system id %s", system_id_to_str(intf.adj.neighbor_system_id[:]))
-        neighborsTlv.tlv_value = append(neighborsTlv.tlv_value, pseudoNodeId)
-        neighborsTlv.tlv_length += 11 
+        neighborsTLV.valueTLV = append(neighborsTLV.valueTLV, metric[:]...)
+        neighborsTLV.valueTLV = append(neighborsTLV.valueTLV, intf.adj.neighborSystemID[:]...)
+        glog.V(2).Infof("adding neighbor system id %s", systemIDToString(intf.adj.neighborSystemID[:]))
+        neighborsTLV.valueTLV = append(neighborsTLV.valueTLV, pseudoNodeId)
+        neighborsTLV.lengthTLV += 11 
     }
-    return &neighborsTlv
+    return &neighborsTLV
 }
 
 func buildEmptyLSP(sequenceNumber uint32, sourceSystemID string) *IsisLsp {
     var newLsp IsisLsp 
-    newLsp.LspID = SystemIDToLspID(sourceSystemID)
-    isisPDUHeader := IsisPDUHeader{Intra_domain_routeing_protocol_discriminator: 0x83,
-                                   Pdu_length: 0x00,
-                                   Protocol_id: 0x01,
-                                   System_id_length: 0x00, // 0 means default 6 bytes
-                                   Pdu_type: 0x12, // l1 LSP
+    newLsp.LspID = systemIDToLspID(sourceSystemID)
+    isisPDUHeader := IsisPDUHeader{IntraDomainRouteingProtocolDiscriminator: 0x83,
+                                   LengthPDU: 0x00,
+                                   ProtocolID: 0x01,
+                                   SystemIDLength: 0x00, // 0 means default 6 bytes
+                                   TypePDU: 0x12, // l1 LSP
                                    Version: 0x01, //
                                    Reserved: 0x00,
-                                   Maximum_area_addresses: 0x00} // 0 means default 3 addresses
+                                   MaximumAreaAddresses: 0x00} // 0 means default 3 addresses
     var seq [4]byte
     binary.BigEndian.PutUint32(seq[:], sequenceNumber)
     lspHeader := IsisLspHeader{SequenceNumber: seq}
     lspHeader.LspID = newLsp.LspID
     core := IsisLspCore{Header: isisPDUHeader,
                         LspHeader: lspHeader,
-                        FirstTlv: nil}
+                        FirstTLV: nil}
     newLsp.CoreLsp = &core
-    newLsp.Key =  LspIDToKey(newLsp.LspID)
+    newLsp.Key =  lspIDToKey(newLsp.LspID)
     return &newLsp
 }
 
-func GenerateLocalLsp() {
+func generateLocalLsp() {
     // Triggered on adjacency change
     // Build a local LSP from the information in adjacency database 
     // Leaving fragment and PSN set to zero for now
@@ -395,17 +390,17 @@ func GenerateLocalLsp() {
     // Also include the adjacency tlvs (assuming metric of 10 always)
     reachTLV := getIPReachTLV(cfg.interfaces)
     neighborTLV := getNeighborTLV(cfg.interfaces)
-    reachTLV.next_tlv = neighborTLV
-    newLsp.CoreLsp.FirstTlv = reachTLV 
+    reachTLV.nextTLV = neighborTLV
+    newLsp.CoreLsp.FirstTLV = reachTLV 
     UpdateDB.DBLock.Lock()
     UpdateDB.Root = AvlInsert(UpdateDB.Root, newLsp.Key, newLsp, true)
     tmp := AvlSearch(UpdateDB.Root, newLsp.Key)
     UpdateDB.DBLock.Unlock()
     if tmp == nil {
-        glog.V(1).Infof("Failed to generate local LSP %s", system_id_to_str(newLsp.LspID[:6]))
+        glog.V(1).Infof("Failed to generate local LSP %s", systemIDToString(newLsp.LspID[:6]))
     } else {
         lsp := tmp.(*IsisLsp)
-        glog.V(1).Infof("Successfully generated local LSP %s seq num %d", system_id_to_str(lsp.LspID[:6]), sequenceNumber)
+        glog.V(1).Infof("Successfully generated local LSP %s seq num %d", systemIDToString(lsp.LspID[:6]), sequenceNumber)
     }
     // Lsp has been created, need to flood it on all interfaces
     for _, intf := range cfg.interfaces {
@@ -421,18 +416,18 @@ func GenerateLocalLsp() {
     }
 }
 
-func PrintUpdateDB(root *AvlNode) {
+func printUpdateDB(root *AvlNode) {
     if root != nil {
-        PrintUpdateDB(root.left)
+        printUpdateDB(root.left)
         if root.data != nil {
             glog.V(2).Infof("%v", root.data)
         }
-        PrintUpdateDB(root.right)
+        printUpdateDB(root.right)
     }
 }
 
-func PrintLspFloodStates(intf *Intf) {
+func printLspFloodStates(intf *Intf) {
     for _, v := range intf.lspFloodStates {
-        glog.Infof("%s --> SRM %v", system_id_to_str(v.LspID[:6]), v.SRM)
+        glog.Infof("%s --> SRM %v", systemIDToString(v.LspID[:6]), v.SRM)
     }
 }
