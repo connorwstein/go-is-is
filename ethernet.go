@@ -1,4 +1,6 @@
 // Ethernet layer
+// +build linux
+
 package main
 
 import (

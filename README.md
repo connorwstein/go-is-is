@@ -4,10 +4,9 @@ This project is an implementation of the major aspects of the IS-IS routing prot
 
 For example in the topology:
 
-       net1         net2 
 node1 <----> node2 <----> node3
 
-Node 1 and 3 are members of two different networks and node 2 is a member of both with two virtual ethernet interfaces. After the IS-IS protocol has established neighbors, exchanged LSPs and ran SPF on the LSP database, then each node will know the full topology of the network and know the shortest path to each node. Node 1 will know that he has to go through node 2 to get to node 3. 
+Say node 1 and 3 are members of two different networks and node 2 is a member of both with two virtual ethernet interfaces. After the IS-IS protocol has established neighbors, exchanged LSPs and ran SPF on the LSP database, then each node will know the full topology of the network and know the shortest path to each node. Node 1 will know that he has to go through node 2 to get to node 3. 
 
 Node configuration and state queries are accepted through gRPC and state information can also be streamed out in the same fashion. The test client node which pushes the config in is a member of all networks so it can reach all nodes. Also since IS-IS frames are embedded directly in layer 2 packets with no layer 3 header, special settings are required for the linux kernel. See config_docker_machine.sh for details.
 

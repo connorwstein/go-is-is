@@ -1,6 +1,8 @@
 // Update process in the IS-IS protocol.
 // Generates local LSPs, receives remote LSPs and floods them appropriately. Builds
 // the update database.
+// +build linux
+
 package main
 
 import (

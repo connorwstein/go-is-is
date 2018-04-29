@@ -1,4 +1,6 @@
 // Go-is-is daemon 
+// +build linux
+
 package main
 
 import (
@@ -15,7 +17,7 @@ import (
     "net"
     "golang.org/x/net/context"
     "google.golang.org/grpc"
-    pb "./config"
+    pb "github.com/connorwstein/go-is-is/config"
     "google.golang.org/grpc/reflection"
     "github.com/golang/glog"
     "runtime"

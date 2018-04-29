@@ -76,6 +76,7 @@ func TestSystemIDConfig(t *testing.T) {
     nodeIpAddresses := []string{os.Getenv("node1"), os.Getenv("node2"), os.Getenv("node3")}
     for k := 0; k < len(nodeIpAddresses); k++ {
         rsp := ConfigureSid(nodeIpAddresses[k], GRPC_CFG_SERVER_PORT, fmt.Sprintf("1111.1111.111%d", k + 1))
+        fmt.Println(rsp)
         if ! strings.Contains(rsp.Ack, "successfully") {
             t.Fail()
         }

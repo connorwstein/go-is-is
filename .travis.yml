@@ -33,4 +33,4 @@ before_script:
 script:
     - docker exec -d test_client /bin/bash -c "/opt/go-is-is/build.sh"
     - docker exec -d test_client /bin/bash -c "/opt/go-is-is/scripts/start_all.sh"
-    - docker exec -d test_client /opt/go-is-is/run_tests.sh 
+    - docker exec test_client /opt/go-is-is/run_tests.sh 

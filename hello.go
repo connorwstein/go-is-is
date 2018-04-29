@@ -1,5 +1,7 @@
 // Hello process in the IS-IS protocol.
 // Establishes adjacencies with neighbors.
+// +build linux
+
 package main
 
 import (

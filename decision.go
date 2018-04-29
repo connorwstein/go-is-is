@@ -1,5 +1,7 @@
 // Decision process in the IS-IS protocol.
 // Computes the shortest paths to all other nodes based on the update database information.
+// +build linux
+
 package main
 
 import (
