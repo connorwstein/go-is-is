@@ -4,7 +4,7 @@ tmux new-window -t go-is-is:1 -n compose
 tmux select-window -t go-is-is:1
 tmux split-window -h
 tmux select-pane -t 0
-tmux send-keys "docker-compose up" C-m
+tmux send-keys "docker-compose -f topologies/3node-topo.yml up" C-m
 tmux select-pane -t 1
 tmux send-keys "docker-machine ssh" C-m
 tmux send-keys "sudo su" C-m

@@ -25,12 +25,12 @@ install:
   - docker-compose version
 
 before_script:
-  - docker-compose build
-  - docker-compose up -d 
+  - docker-compose -f topologies/3node-topo.yml build
+  - docker-compose -f topologies/3node-topo.yml up -d 
   # Adjust docker bridge settings
   - scripts/config_docker_machine.sh
 
 script:
-    - docker exec -d test_client /bin/bash -c "/opt/go-is-is/build.sh"
-    - docker exec -d test_client /bin/bash -c "/opt/go-is-is/scripts/start_all.sh"
-    - docker exec test_client /opt/go-is-is/run_tests.sh 
+    - docker exec -d test_client /bin/bash -c "/root/go/src/github.com/connorwstein/go-is-is/scripts/build.sh"
+    - docker exec -d test_client /bin/bash -c "/root/go/src/github.com/connorwstein/go-is-is/scripts/start_all.sh"
+    - docker exec test_client /root/go/src/github.com/connorwstein/go-is-is/run_tests.sh

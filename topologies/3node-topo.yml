@@ -11,6 +11,10 @@ services:
         container_name: node1
         privileged: true # for gdb
         image: is-is-node
+        volumes:
+            - type: bind
+              source: ..
+              target: /root/go/src/github.com/connorwstein/go-is-is
         networks:
             - testnet1
     node2:
@@ -19,6 +23,10 @@ services:
         container_name: node2
         privileged: true
         image: is-is-node 
+        volumes:
+            - type: bind
+              source: ..
+              target: /root/go/src/github.com/connorwstein/go-is-is
         networks:
             - testnet1
             - testnet2
@@ -28,6 +36,10 @@ services:
         container_name: node3
         privileged: true
         image: is-is-node 
+        volumes:
+            - type: bind
+              source: ..
+              target: /root/go/src/github.com/connorwstein/go-is-is
         networks:
             - testnet2
     test_client:
@@ -38,6 +50,9 @@ services:
             - type: bind
               source: /var/run/docker.sock 
               target: /var/run/docker.sock 
+            - type: bind
+              source: ..
+              target: /root/go/src/github.com/connorwstein/go-is-is
         image: is-is-node 
         networks:
             - testnet1

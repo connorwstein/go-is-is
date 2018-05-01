@@ -11,11 +11,13 @@ RUN unzip protoc-3.5.1-linux-x86_64.zip -d protoc3
 RUN mv protoc3/bin/* /usr/local/bin/ 
 RUN mv protoc3/include/* /usr/local/include/
 RUN ln -s /usr/local/bin/protoc /usr/bin/protoc
-WORKDIR /opt/go-is-is
 RUN /usr/local/go/bin/go get -u google.golang.org/grpc 
 RUN /usr/local/go/bin/go get -u github.com/golang/protobuf/protoc-gen-go
 RUN /usr/local/go/bin/go get -u github.com/golang/glog
 RUN /usr/local/go/bin/go get -u github.com/vishvananda/netlink
+#RUN /usr/local/go/bin/go get -u github.com/connorwstein/go-is-is
+RUN mkdir -p /root/go/src/github.com/connorwstein/go-is-is
+WORKDIR /root/go/src/github.com/connorwstein/go-is-is
 ENV PATH="/usr/local/go/bin:/root/go/bin:${PATH}"
 RUN curl -fsSL https://get.docker.com | sh
 RUN echo 'set auto-load safe-path /' > /root/.gdbinit

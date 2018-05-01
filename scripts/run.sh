@@ -1,2 +1,2 @@
 #!/bin/bash
-./main -logtostderr -v 2
+./go-is-is -logtostderr -v 2

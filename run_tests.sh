@@ -4,4 +4,4 @@
 export node1=$(docker inspect --format '{{ .NetworkSettings.Networks.topologies_testnet1.IPAddress }}' node1)
 export node2=$(docker inspect --format '{{ .NetworkSettings.Networks.topologies_testnet1.IPAddress }}' node2)
 export node3=$(docker inspect --format '{{ .NetworkSettings.Networks.topologies_testnet2.IPAddress }}' node3)
-go test -v -coverprofile cover.out
+go test -v 
