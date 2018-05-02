@@ -1,10 +1,14 @@
 #!/bin/bash
 # Wipe existing
-docker exec node1 /bin/bash -c "pkill -f go-is-is && echo '' > /tmp/logs"
-docker exec node2 /bin/bash -c "pkill -f go-is-is && echo '' > /tmp/logs"
-docker exec node3 /bin/bash -c "pkill -f go-is-is && echo '' > /tmp/logs"
-# Start an is-is node in all containers
-docker exec -d node1 /bin/bash -c "/root/go/src/github.com/connorwstein/go-is-is/scripts/run.sh &> /tmp/logs"
-docker exec -d node2 /bin/bash -c "/root/go/src/github.com/connorwstein/go-is-is/scripts/run.sh &> /tmp/logs"
-docker exec -d node3 /bin/bash -c "/root/go/src/github.com/connorwstein/go-is-is/scripts/run.sh &> /tmp/logs"
+echo $#
+if [[ $# != 1 ]]; then
+	echo "Specify the number of nodes in the topology"
+	exit 1
+fi
+for (( i=1; i<$1; i++ )); do 
+docker exec node$i /bin/bash -c "pkill -f go-is-is && echo '' > /tmp/logs";
+done 
+for (( i=1; i<=$1; i++ )); do 
+docker exec -d node$i /bin/bash -c "/root/go/src/github.com/connorwstein/go-is-is/scripts/run.sh &> /tmp/logs";
+done 
 

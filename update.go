@@ -211,6 +211,7 @@ func deserializeLsp(raw_bytes []byte) *IsisLsp {
 	// Check if the tlv offset is strictly less than the raw bytes, if it is then there must be TLVs present
 	// keep reading until remaining tlv data is 0, building up a linked list of the TLVs as we go
 	remainingTLVBytes := len(raw_bytes) - tlv_offset
+	glog.V(2).Infof("Received %d raw bytes not including ethernet header. TLV bytes %d. TLV offset %d", len(raw_bytes), remainingTLVBytes, tlv_offset)
 	var curr *IsisTLV
 	first := true
 	for remainingTLVBytes > 0 {

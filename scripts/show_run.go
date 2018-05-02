@@ -4,7 +4,7 @@ package main
 import (
     "fmt"
     "os"
-    pb "../config"
+    pb "github.com/connorwstein/go-is-is/config"
     "google.golang.org/grpc"
     "strings"
     "golang.org/x/net/context"

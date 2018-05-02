@@ -7,7 +7,6 @@ version: '3.2'
 services: 
     node1:
         build: .
-        #command: /opt/go-is-is/main
         container_name: node1
         privileged: true # for gdb
         image: is-is-node
@@ -19,7 +18,6 @@ services:
             - testnet1
     node2:
         build: .
-        #command: /opt/go-is-is/main
         container_name: node2
         privileged: true
         image: is-is-node 
@@ -32,7 +30,6 @@ services:
             - testnet2
     node3:
         build: .
-        #command: /opt/go-is-is/main
         container_name: node3
         privileged: true
         image: is-is-node 

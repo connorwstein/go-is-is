@@ -15,7 +15,7 @@ import (
 const (
 	PF_PACKET     = 17
 	ETH_P_ALL     = 0x0003
-	READ_BUF_SIZE = 100
+	READ_BUF_SIZE = 1000
 )
 
 type RawSock struct {

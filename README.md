@@ -12,21 +12,21 @@ Node configuration and state queries are accepted through gRPC and state informa
 
 USAGE:
 Topology bring up:
-docker-compose build
-docker-compose up
+docker-compose -f topologies/<topo to bring up> build
+docker-compose -f topologies/<topo to bring up> up
 
 Build the IS-IS binary and start it on each node:
-docker exec -d test_client /bin/bash -c "/opt/go-is-is/build.sh"
-docker exec -d test_client /bin/bash -c "/opt/go-is-is/scripts/start_all.sh"
+docker exec -d test_client /bin/bash -c "/root/go/src/github.com/connorwstein/go-is-is/build.sh"
+docker exec -d test_client /bin/bash -c "/root/go/src/github.com/connorwstein/go-is-is/scripts/start_all.sh <number of nodes in topology>"
 
 Run the tests:
-docker exec test_client /opt/go-is-is/run_tests.sh
+docker exec test_client /bin/bash -c "/root/go/src/github.com/connorwstein/go-is-is/run_tests.sh <number of nodes in topology>"
 
-See all the container IPs in the topology:
-docker exec test_client /bin/bash -c "go run /opt/go-is-is/scripts/get_ips.sh"
+Get the IP of a node in the topology:
+docker exec test_client /bin/bash -c "go run /root/go/src/github.com/connorwstein/go-is-is/scripts/get_ips.sh <node number>"
 
 Show the running state of each node:
-docker exec test_client /bin/bash -c "go run /opt/go-is-is/scripts/show_run.go <IP OF CONTAINER>"
+docker exec test_client /bin/bash -c "go run /root/go/src/github.com/connorwstein/go-is-is/scripts/show_run.go <ip of node>"
 
 DONE:
 - Adjacency establishment for nodes with multiple interfaces
@@ -34,9 +34,9 @@ DONE:
 - Support sequence numbers of LSPs to overwrite if we get a newer sequence number
 - Using the metrics in TLV 2 and TLV 128, run SPF on the LSP database. SPF runs on a graph where
 nodes are IS-IS instances, adjacencies are edges and directly connected prefixes are leaf nodes.
+- More complex topology for fully testing SPF
 
 TODO:
-- More complex topology for fully testing SPF
 - Actually install the routes to make all containers reachable
 - Might be able to convert the structs to use byte slices for everything rather than fixed sizes
 - Interface information should probably be a map not a list

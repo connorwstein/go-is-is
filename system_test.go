@@ -10,6 +10,7 @@ package main
 
 import (
 	"fmt"
+    "flag"
 	pb "github.com/connorwstein/go-is-is/config"
 	"github.com/golang/glog"
 	"golang.org/x/net/context"
@@ -19,6 +20,7 @@ import (
 	"testing"
 	"time"
 )
+var numNodes = flag.Int("num_nodes", 3, "Number of nodes in the topology")
 
 func ConfigureSid(host string, port string, sid string) *pb.SystemIDCfgReply {
 	target := [2]string{host, port}
@@ -73,7 +75,11 @@ func Get(host string, port string, req string) interface{} {
 
 func TestSystemIDConfig(t *testing.T) {
 	// Configure SIDs of the three nodes
-	nodeIpAddresses := []string{os.Getenv("node1"), os.Getenv("node2"), os.Getenv("node3")}
+    nodeIpAddresses := make([]string, 0)
+    for i := 1; i <= *numNodes; i++ {
+        nodeIpAddresses = append(nodeIpAddresses, os.Getenv(fmt.Sprintf("node%d", i)))
+    }
+    fmt.Println(nodeIpAddresses)
 	for k := 0; k < len(nodeIpAddresses); k++ {
 		rsp := ConfigureSid(nodeIpAddresses[k], GRPC_CFG_SERVER_PORT, fmt.Sprintf("1111.1111.111%d", k+1))
 		if !strings.Contains(rsp.Ack, "successfully") {

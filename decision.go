@@ -208,3 +208,14 @@ func computeSPF(updateDB *IsisDB, topoDB *IsisDB, localSystemID string, localInt
 	AvlPrint(topoDB.Root)
 	updateDB.DBLock.Unlock()
 }
+
+func installRouteFromPath(path *Triple){
+    // Given a shortest path to a node with its appropriate next hop, install the route
+    // route add -net <network which the target router has an ip on> gw <ip of next hop>
+// type Triple struct {
+// 	// Either systemID or prefix is set, not both
+// 	systemID string
+// 	distance uint32
+// 	adj      *Adjacency
+// }
+}

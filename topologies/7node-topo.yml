@@ -1,0 +1,145 @@
+# Want something with parallel links as well as multiple paths to the same node of varying number 
+# of hops. Also at least on path which requires 2 hops.
+
+#    net1    net2   net3
+# R1 ---- R2 ---- R3 --- R5
+# |       |       |
+# net4   net5    net6
+# |       |       |
+#  -----  R4 -----
+#         |
+#       net7  
+#         |
+#        R6
+#         |
+#       net8
+#         |
+#        R7
+
+version: '3.2'
+services: 
+    node1:
+        build: .
+        container_name: node1
+        privileged: true # for gdb
+        image: is-is-node
+        volumes:
+            - type: bind
+              source: ..
+              target: /root/go/src/github.com/connorwstein/go-is-is
+        networks:
+            - testnet1
+            - testnet4
+    node2:
+        build: .
+        container_name: node2
+        privileged: true
+        image: is-is-node 
+        volumes:
+            - type: bind
+              source: ..
+              target: /root/go/src/github.com/connorwstein/go-is-is
+        networks:
+            - testnet1
+            - testnet2
+            - testnet5
+    node3:
+        build: .
+        container_name: node3
+        privileged: true
+        image: is-is-node 
+        volumes:
+            - type: bind
+              source: ..
+              target: /root/go/src/github.com/connorwstein/go-is-is
+        networks:
+            - testnet2
+            - testnet3
+            - testnet6
+    node4:
+        build: .
+        container_name: node4
+        privileged: true
+        image: is-is-node 
+        volumes:
+            - type: bind
+              source: ..
+              target: /root/go/src/github.com/connorwstein/go-is-is
+        networks:
+            - testnet4
+            - testnet5
+            - testnet6
+            - testnet7
+    node5:
+        build: .
+        container_name: node5
+        privileged: true
+        image: is-is-node 
+        volumes:
+            - type: bind
+              source: ..
+              target: /root/go/src/github.com/connorwstein/go-is-is
+        networks:
+            - testnet3
+    node6:
+        build: .
+        container_name: node6
+        privileged: true
+        image: is-is-node 
+        volumes:
+            - type: bind
+              source: ..
+              target: /root/go/src/github.com/connorwstein/go-is-is
+        networks:
+            - testnet7
+            - testnet8
+    node7:
+        build: .
+        container_name: node7
+        privileged: true
+        image: is-is-node 
+        volumes:
+            - type: bind
+              source: ..
+              target: /root/go/src/github.com/connorwstein/go-is-is
+        networks:
+            - testnet8
+    test_client:
+        build: .
+        container_name: test_client
+        privileged: true
+        volumes:
+            - type: bind
+              source: /var/run/docker.sock 
+              target: /var/run/docker.sock 
+            - type: bind
+              source: ..
+              target: /root/go/src/github.com/connorwstein/go-is-is
+        image: is-is-node 
+        networks:
+            - testnet1
+            - testnet2
+            - testnet3
+            - testnet4
+            - testnet5
+            - testnet6
+            - testnet7
+            - testnet8
+
+networks:
+  testnet1:
+    driver: bridge
+  testnet2:
+    driver: bridge
+  testnet3:
+    driver: bridge
+  testnet4:
+    driver: bridge
+  testnet5:
+    driver: bridge
+  testnet6:
+    driver: bridge
+  testnet7:
+    driver: bridge
+  testnet8:
+    driver: bridge
