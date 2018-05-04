@@ -45,6 +45,38 @@ type IsisTLV struct {
 	valueTLV  []byte
 }
 
+func parseTLVs(rawBytes []byte, startIndex int) *IsisTLV {
+    // Starting from startIndex, build a linked list of TLVs
+    var firstTLV *IsisTLV = nil
+    var previousTLV *IsisTLV = nil
+    first := true
+	remainingTLVBytes := len(rawBytes) - startIndex
+    for remainingTLVBytes > 0 {
+        var currentTLV IsisTLV
+        // Fill in tlv
+		currentTLV.typeTLV = rawBytes[startIndex]
+		currentTLV.lengthTLV = rawBytes[startIndex+1]
+		glog.V(2).Infof("TLV code %d received, length %d!\n", rawBytes[startIndex], rawBytes[startIndex+1])
+		currentTLV.valueTLV = make([]byte, currentTLV.lengthTLV)
+		copy(currentTLV.valueTLV, rawBytes[startIndex+2:startIndex+2+int(currentTLV.lengthTLV)])
+		remainingTLVBytes -= (int(currentTLV.lengthTLV) + 2) // + 2 for type and length
+		startIndex += int(currentTLV.lengthTLV) + 2
+        if first {
+            // Set the first tlv to point to current tlv
+            firstTLV = &currentTLV
+            // Set previous tlv to current tlv address so on the next iteration we can update next if need be
+            previousTLV = &currentTLV
+            first = false
+        } else {
+            // Set previous.nextTLV to current tlv
+            previousTLV.nextTLV = &currentTLV
+            // Set previous to current tlv
+            previousTLV = &currentTLV
+        }
+    }
+    return firstTLV
+}
+
 func htons(host uint16) uint16 {
 	return (host&0xff)<<8 | (host >> 8)
 }

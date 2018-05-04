@@ -212,26 +212,7 @@ func deserializeLsp(raw_bytes []byte) *IsisLsp {
 	// keep reading until remaining tlv data is 0, building up a linked list of the TLVs as we go
 	remainingTLVBytes := len(raw_bytes) - tlv_offset
 	glog.V(2).Infof("Received %d raw bytes not including ethernet header. TLV bytes %d. TLV offset %d", len(raw_bytes), remainingTLVBytes, tlv_offset)
-	var curr *IsisTLV
-	first := true
-	for remainingTLVBytes > 0 {
-		var currentTLV IsisTLV
-		currentTLV.typeTLV = raw_bytes[tlv_offset]
-		currentTLV.lengthTLV = raw_bytes[tlv_offset+1]
-		glog.V(2).Infof("TLV code %d received, length %d!\n", raw_bytes[tlv_offset], raw_bytes[tlv_offset+1])
-		currentTLV.valueTLV = make([]byte, currentTLV.lengthTLV)
-		copy(currentTLV.valueTLV, raw_bytes[tlv_offset+2:tlv_offset+2+int(currentTLV.lengthTLV)])
-		remainingTLVBytes -= (int(currentTLV.lengthTLV) + 2) // + 2 for type and length
-		tlv_offset += int(currentTLV.lengthTLV) + 2
-		if first {
-			coreLsp.FirstTLV = &currentTLV
-			curr = coreLsp.FirstTLV
-			first = false
-		} else {
-			curr.nextTLV = &currentTLV
-			curr = curr.nextTLV
-		}
-	}
+    coreLsp.FirstTLV = parseTLVs(raw_bytes, tlv_offset)
 	var lsp IsisLsp = IsisLsp{Key: lspIDToKey(lspHeader.LspID), LspID: lspHeader.LspID, CoreLsp: coreLsp}
 	return &lsp
 }

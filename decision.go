@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"github.com/golang/glog"
 	"sync"
+//     "github.com/vishvananda/netlink"
 )
 
 var TopoDB *IsisDB
@@ -212,6 +213,18 @@ func computeSPF(updateDB *IsisDB, topoDB *IsisDB, localSystemID string, localInt
 func installRouteFromPath(path *Triple){
     // Given a shortest path to a node with its appropriate next hop, install the route
     // route add -net <network which the target router has an ip on> gw <ip of next hop>
+    // We know the next hop required to get to each node in terms of its system id
+    // and the adjacency which that is reachable over. For the route we need the ip address 
+    // of the next hop (determine this from the adjacency neighborIP) and the prefixes available on that
+    // remote node (get this from TLV 128 of that remote node)
+    
+//     func RouteAdd(route *Route) error {
+//     net.ParseCIDR
+//     network := net.IPNet{IP: , Mask:
+//     gw := 
+//     newRoute := netlink.Route{Dst:
+//     netlink.RouteAdd(
+
 // type Triple struct {
 // 	// Either systemID or prefix is set, not both
 // 	systemID string

@@ -68,6 +68,7 @@ type Adjacency struct {
 	neighborSystemID []byte
 	metric           uint32
 	intfName         string
+    neighborIP net.IP
 }
 
 func getAdjacency(neighborSystemID string) *Adjacency {

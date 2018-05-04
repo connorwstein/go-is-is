@@ -15,6 +15,7 @@ RUN /usr/local/go/bin/go get -u google.golang.org/grpc
 RUN /usr/local/go/bin/go get -u github.com/golang/protobuf/protoc-gen-go
 RUN /usr/local/go/bin/go get -u github.com/golang/glog
 RUN /usr/local/go/bin/go get -u github.com/vishvananda/netlink
+RUN /usr/local/go/bin/go get -u github.com/derekparker/delve/cmd/dlv
 #RUN /usr/local/go/bin/go get -u github.com/connorwstein/go-is-is
 RUN mkdir -p /root/go/src/github.com/connorwstein/go-is-is
 WORKDIR /root/go/src/github.com/connorwstein/go-is-is

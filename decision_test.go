@@ -109,3 +109,8 @@ func TestDecisionSPF(t *testing.T) {
 		}
 	}
 }
+
+
+func TestInstallRoute(t *testing.T) {
+    // 
+}

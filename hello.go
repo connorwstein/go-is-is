@@ -6,6 +6,7 @@ package main
 
 import (
 	"bytes"
+    "net"
 	"encoding/binary"
 	"encoding/hex"
 	"github.com/golang/glog"
@@ -81,14 +82,15 @@ func serializeIsisHelloPDU(pdu *IsisLanHelloPDU) []byte {
 	// common header can by serialized as is
 	binary.Write(&buf, binary.BigEndian, pdu.Header)
 	binary.Write(&buf, binary.BigEndian, pdu.LanHelloHeader)
-	if pdu.FirstTLV != nil {
+	tlv := pdu.FirstTLV
+    for tlv != nil {
 		// TODO: Will need to keep walking these tlvs until we hit the end somehow
-		glog.V(2).Info("Serializing neighbor tlv", pdu.FirstTLV)
-		binary.Write(&buf, binary.BigEndian, pdu.FirstTLV.typeTLV)
-		binary.Write(&buf, binary.BigEndian, pdu.FirstTLV.lengthTLV)
-		binary.Write(&buf, binary.BigEndian, pdu.FirstTLV.valueTLV)
+		glog.V(2).Info("Serializing tlv:", tlv.typeTLV)
+		binary.Write(&buf, binary.BigEndian, tlv.typeTLV)
+		binary.Write(&buf, binary.BigEndian, tlv.lengthTLV)
+		binary.Write(&buf, binary.BigEndian, tlv.valueTLV)
+        tlv = tlv.nextTLV
 	}
-	glog.V(4).Info("Serialized neighbor tlv\n", hex.Dump(buf.Bytes()[:]))
 	return buf.Bytes()
 }
 
@@ -106,22 +108,21 @@ func deserializeIsisHelloPDU(raw_bytes []byte) *IsisLanHelloPDU {
 	glog.V(2).Info("Binary decode hello header:", helloHeader)
 	var hello IsisLanHelloPDU
 	hello.LanHelloHeader.SourceSystemID = helloHeader.SourceSystemID
-	var neighborTLV IsisTLV // Golang automagically tosses this on the heap, I like it
 	ethernetHeaderSize := 14
 	tlv_offset := ethernetHeaderSize + int(unsafe.Sizeof(commonHeader)) + int(unsafe.Sizeof(helloHeader))
 	glog.Infof("tlv offset %d raw bytes %d", tlv_offset, len(raw_bytes))
-	if tlv_offset < len(raw_bytes) {
-		// Then we have a tlv
-		neighborTLV.typeTLV = raw_bytes[tlv_offset]
-		neighborTLV.lengthTLV = raw_bytes[tlv_offset+1]
-		glog.V(2).Infof("TLV code %d received, length %d!\n", raw_bytes[tlv_offset], raw_bytes[tlv_offset+1])
-		neighborTLV.valueTLV = make([]byte, neighborTLV.lengthTLV)
-		copy(neighborTLV.valueTLV, raw_bytes[tlv_offset+2:tlv_offset+2+int(neighborTLV.lengthTLV)])
-		hello.FirstTLV = &neighborTLV
-	} else {
-		hello.FirstTLV = nil
-	}
+    hello.FirstTLV = parseTLVs(raw_bytes, tlv_offset)
 	return &hello
+}
+
+func getInterfaceTLV(intf *Intf) *IsisTLV {
+    var interfaceTLV IsisTLV
+    interfaceTLV.typeTLV = 132
+    interfaceTLV.lengthTLV = 4
+    interfaceTLV.valueTLV = make([]byte, 4)
+    copy(interfaceTLV.valueTLV, intf.prefix.To4())
+    glog.V(2).Infof("Interface TLV 132 %v", interfaceTLV)
+    return &interfaceTLV 
 }
 
 func sendHello(intf *Intf, sid string, neighborsTLV *IsisTLV, sendChan chan []byte) {
@@ -130,8 +131,10 @@ func sendHello(intf *Intf, sid string, neighborsTLV *IsisTLV, sendChan chan []by
 	hello_l1_lan := buildL1HelloPDU(systemIDToBytes(sid))
 	if neighborsTLV != nil {
 		hello_l1_lan.FirstTLV = neighborsTLV
+        hello_l1_lan.FirstTLV.nextTLV = getInterfaceTLV(intf)
+        // Need to also add TLV 132 which has the outgoing ip address
+        glog.V(2).Infof("Sending hello with tlvs %v %v", hello_l1_lan.FirstTLV, hello_l1_lan.FirstTLV.nextTLV)
 	}
-	glog.V(2).Info("Sending hello with tlv:", hello_l1_lan.FirstTLV)
 	sendChan <- buildEthernetFrame(l1_multicast,
 		getMac(intf.name),
 		serializeIsisHelloPDU(hello_l1_lan))
@@ -236,8 +239,10 @@ func isisHelloRecv(intf *Intf, helloChan chan []byte, sendChan chan []byte) {
 				intf.adj.state = "UP"
 				intf.adj.metric = 10
 				intf.adj.neighborSystemID = make([]byte, 6)
+                intf.adj.neighborIP = make(net.IP, 4)
 				copy(intf.adj.neighborSystemID, rsp.lanHelloPDU.LanHelloHeader.SourceSystemID[:])
-				glog.Infof("Adjacency up between %v and %v on intf %v", cfg.sid, systemIDToString(intf.adj.neighborSystemID), intf.name)
+                copy(intf.adj.neighborIP, net.IP(rsp.lanHelloPDU.FirstTLV.nextTLV.valueTLV))
+				glog.Infof("Adjacency up between %v and %v on intf %v, neighbor IP %v", cfg.sid, systemIDToString(intf.adj.neighborSystemID), intf.name, intf.adj.neighborIP)
 				// Signal that an adjacency change has occurred, so we should regenerate our lsp
 				// and flood
 				// Optimization might be to use this adjacency information to only update that part of the
