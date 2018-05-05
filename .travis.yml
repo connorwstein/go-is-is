@@ -28,7 +28,7 @@ before_script:
   - docker-compose -f topologies/3node-topo.yml build
   - docker-compose -f topologies/3node-topo.yml up -d 
   # Adjust docker bridge settings
-  - scripts/config_docker_machine.sh
+  - sudo scripts/config_docker_machine.sh
 
 script:
     - docker exec node1 /bin/bash -c "/root/go/src/github.com/connorwstein/go-is-is/build.sh"
