@@ -53,7 +53,7 @@ func (lsp IsisLsp) String() string {
 	for curr != nil {
 		lspString.WriteString(fmt.Sprintf("\tTLV %d\n", curr.typeTLV))
 		lspString.WriteString(fmt.Sprintf("\tTLV size %d\n", curr.lengthTLV))
-		if curr.typeTLV == 128 {
+		if curr.typeTLV == ISIS_IP_INTERNAL_REACH_TLV {
 			// This is a external reachability tlv
 			// TODO: fix hard coding here
 			for i := 0; i < int(curr.lengthTLV)/12; i++ {
@@ -63,7 +63,7 @@ func (lsp IsisLsp) String() string {
 				metric := curr.valueTLV[i*12+8 : i*12+12]
 				lspString.WriteString(fmt.Sprintf("\t\t%s Metric %d\n", prefix.String(), binary.BigEndian.Uint32(metric[:])))
 			}
-		} else if curr.typeTLV == 2 {
+		} else if curr.typeTLV == ISIS_NEIGHBORS_TLV {
 			// This is a neighbors tlv, its length - 1 (to exclude the first virtualByteFlag) will be a multiple of 11
 			for i := 0; i < int(curr.lengthTLV-1)/11; i++ {
 				// print out the neighbor system ids and metric
@@ -274,11 +274,10 @@ func getNeighbors(neighborTLV *IsisTLV) []*Neighbor {
 }
 
 func lookupNeighbors(lsp *IsisLsp) []*Neighbor {
-	// Given an LSP returns  list of neig
-	//var neighbors []*Neighbor
+	// Given an LSP returns list of neighbors
 	currentTLV := lsp.CoreLsp.FirstTLV
 	for currentTLV != nil {
-		if int(currentTLV.typeTLV) == 2 {
+		if int(currentTLV.typeTLV) == ISIS_NEIGHBORS_TLV {
 			return getNeighbors(currentTLV)
 		}
 		currentTLV = currentTLV.nextTLV
@@ -307,6 +306,7 @@ func getIPReachTLV(interfaces []*Intf) *IsisTLV {
 				ipReachTLV.valueTLV = append(ipReachTLV.valueTLV, route.Mask[:]...)
 				metric := [4]byte{0x00, 0x00, 0x00, 0x0a}
 				ipReachTLV.valueTLV = append(ipReachTLV.valueTLV, metric[:]...) // Using metric of 10 always (1 hop)
+                glog.V(2).Infof("Adding route %v", route)
 				ipReachTLV.lengthTLV += 12
 			}
 		}
@@ -338,6 +338,43 @@ func getNeighborTLV(interfaces []*Intf) *IsisTLV {
 		neighborsTLV.lengthTLV += 11
 	}
 	return &neighborsTLV
+}
+
+func getPrefixesFromTLV(tlv *IsisTLV) []net.IPNet {
+    // Given a prefix tlv, return the prefixes as a slice of strings
+    prefixes := make([]net.IPNet, 0)
+    prefixCount := int(tlv.lengthTLV) / 12 // Each prefix takes up 12 bytes
+	glog.V(2).Infof("Prefix count %d in tlv %v", prefixCount, tlv)
+	currentPrefix := 0
+	for currentPrefix < prefixCount {
+        // Skip the metrix
+        var currentPrefixValue net.IPNet
+        currentPrefixValue.IP =  tlv.valueTLV[currentPrefix*12:currentPrefix*12+4] // Metric is first, skip that
+        currentPrefixValue.Mask = tlv.valueTLV[currentPrefix*12 + 4:currentPrefix*12 + 4 + 4]
+        glog.V(2).Infof("Current prefix %v", currentPrefixValue)
+        prefixes = append(prefixes, currentPrefixValue)
+        currentPrefix += 1
+    }
+    return prefixes 
+}
+
+func getDirectlyConnectedPrefixes(systemID string) []net.IPNet{
+    // Lookup the lsp and extract the directly connected prefixes
+	tmp := AvlSearch(UpdateDB.Root, systemIDToKey(systemID))
+	if tmp == nil {
+		glog.V(1).Infof("No such LSP %s in LSP database", systemID)
+        return nil
+	} 
+	lsp := tmp.(*IsisLsp)
+	currentTLV := lsp.CoreLsp.FirstTLV
+	for currentTLV != nil {
+		if int(currentTLV.typeTLV) == ISIS_IP_INTERNAL_REACH_TLV {
+			return getPrefixesFromTLV(currentTLV)
+		}
+		currentTLV = currentTLV.nextTLV
+	}
+	glog.V(2).Infof("No prefix tlv found in LSP %s", systemID)
+	return nil
 }
 
 func buildEmptyLSP(sequenceNumber uint32, sourceSystemID string) *IsisLsp {

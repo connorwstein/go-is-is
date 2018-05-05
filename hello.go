@@ -117,7 +117,7 @@ func deserializeIsisHelloPDU(raw_bytes []byte) *IsisLanHelloPDU {
 
 func getInterfaceTLV(intf *Intf) *IsisTLV {
     var interfaceTLV IsisTLV
-    interfaceTLV.typeTLV = 132
+    interfaceTLV.typeTLV = ISIS_IP_INTF_ADDR_TLV 
     interfaceTLV.lengthTLV = 4
     interfaceTLV.valueTLV = make([]byte, 4)
     copy(interfaceTLV.valueTLV, intf.prefix.To4())

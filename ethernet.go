@@ -16,6 +16,9 @@ const (
 	PF_PACKET     = 17
 	ETH_P_ALL     = 0x0003
 	READ_BUF_SIZE = 1000
+    ISIS_NEIGHBORS_TLV = 2
+    ISIS_IP_INTERNAL_REACH_TLV = 128
+    ISIS_IP_INTF_ADDR_TLV = 132
 )
 
 type RawSock struct {

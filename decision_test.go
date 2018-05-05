@@ -4,6 +4,8 @@ import (
 	"flag"
 	"net"
 	"testing"
+    "bytes"
+    "github.com/vishvananda/netlink"
 )
 
 func setDebugs(verbosity string) {
@@ -13,7 +15,7 @@ func setDebugs(verbosity string) {
 	flag.Parse()
 }
 
-func TestDecisionSPF(t *testing.T) {
+func TestDecisionSPF3Node(t *testing.T) {
 	// TOPO:  R1 -- 10 -- R2 -- 10 -- R3
 	// Result should be:
 	// R1 0  nexthop nil
@@ -112,5 +114,36 @@ func TestDecisionSPF(t *testing.T) {
 
 
 func TestInstallRoute(t *testing.T) {
-    // 
+    initConfig() 
+    // Lookup and LSP from the database
+    testSystemID := "1111.1111.1111"
+    // Neighbor IP is the next hop
+    // Needs to be a realistic next hop or linux wont like it use 172.18.0.100
+    trip := Triple{systemID: testSystemID, adj: &Adjacency{neighborIP: net.ParseIP("172.18.0.100")}}
+    // Can't use the real routes
+    routes := make([]*net.IPNet,0)
+    routes = append(routes, &net.IPNet{IP:net.ParseIP("172.28.0.0").To4(), Mask: []byte{0xff, 0xff, 0, 0}})
+    t.Logf("Routes %v", routes)
+    cfg.interfaces = append(cfg.interfaces, &Intf{routes: routes})
+    reachTLV := getIPReachTLV(cfg.interfaces)
+    t.Logf("Reach TLV %v", reachTLV)
+    lsp := IsisLsp{CoreLsp: &IsisLspCore{FirstTLV: reachTLV}}
+    updateDBInit()
+    UpdateDB.Root = AvlInsert(UpdateDB.Root, systemIDToKey(testSystemID), &lsp, false) 
+    testRoute := netlink.Route{Dst: &net.IPNet{IP:net.ParseIP("172.28.0.0").To4(), Mask:[]byte{0xff, 0xff, 0, 0}}, Gw:net.ParseIP("172.18.0.100")}
+    netlink.RouteDel(&testRoute)
+    installRouteFromPath(&trip)
+    // Check whether those routes actually get installed
+    routesInstalled, _ := netlink.RouteList(nil, 0)
+    t.Logf("Installed routes %v", routesInstalled)
+    found := false 
+    for _, route := range routesInstalled {
+        if bytes.Equal(route.Gw.To4(), testRoute.Gw.To4()) {
+            found = true
+        } 
+    }
+    if !found {
+        t.Fail()
+    }
+    netlink.RouteDel(&testRoute)
 }
