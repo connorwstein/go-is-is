@@ -31,6 +31,13 @@ before_script:
   - scripts/config_docker_machine.sh
 
 script:
-    - docker exec -d test_client /bin/bash -c "/root/go/src/github.com/connorwstein/go-is-is/build.sh"
-    - docker exec -d test_client /bin/bash -c "/root/go/src/github.com/connorwstein/go-is-is/scripts/start_all.sh 3"
+    - docker exec node1 /bin/bash -c "/root/go/src/github.com/connorwstein/go-is-is/build.sh"
+    - docker exec node2 /bin/bash -c "/root/go/src/github.com/connorwstein/go-is-is/build.sh"
+    - docker exec node3 /bin/bash -c "/root/go/src/github.com/connorwstein/go-is-is/build.sh"
+    - docker exec test_client /bin/bash -c "/root/go/src/github.com/connorwstein/go-is-is/scripts/start_all.sh 3"
+    # Check go-is-is is running on all the nodes
+    # or for any errors
+    - docker exec node1 tail /tmp/logs
+    - docker exec node2 tail /tmp/logs
+    - docker exec node3 tail /tmp/logs
     - docker exec test_client /bin/bash -c "/root/go/src/github.com/connorwstein/go-is-is/run_tests.sh 3" 
