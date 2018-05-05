@@ -112,7 +112,6 @@ func TestDecisionSPF3Node(t *testing.T) {
 	}
 }
 
-
 func TestInstallRoute(t *testing.T) {
     initConfig() 
     // Lookup and LSP from the database

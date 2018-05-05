@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 )
+
 var numNodes = flag.Int("num_nodes", 3, "Number of nodes in the topology")
 
 func ConfigureSid(host string, port string, sid string) *pb.SystemIDCfgReply {
@@ -39,7 +40,6 @@ func ConfigureSid(host string, port string, sid string) *pb.SystemIDCfgReply {
 }
 
 func Get(host string, port string, req string) interface{} {
-	// TODO: reuse this connection
 	target := [2]string{host, port}
 	conn, err := grpc.Dial(strings.Join(target[:], ":"), grpc.WithInsecure())
 	if err != nil {
@@ -119,7 +119,6 @@ func TestAdjBringUp(t *testing.T) {
 }
 
 func TestLspFlooding(t *testing.T) {
-	//     setDebugs("3")
 	nodeIpAddresses := []string{os.Getenv("node1"), os.Getenv("node2"), os.Getenv("node3")}
 	time.Sleep(10000 * time.Millisecond) // Give it some time for LSP flooding
 	// Ensure UpdateDB has been replicated on each node
@@ -152,7 +151,6 @@ func TestLspFlooding(t *testing.T) {
 			}
 		}
 	}
-	//     setDebugs("0")
 }
 
 func TestTopo(t *testing.T) {

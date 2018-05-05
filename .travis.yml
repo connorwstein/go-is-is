@@ -2,10 +2,7 @@ language: go
 
 sudo: required
 
-dist: xenial
-
-env:
-  - topo=3
+dist: trusty
 
 services:
   - docker
@@ -28,12 +25,12 @@ install:
   - docker-compose version
 
 before_script:
-  - docker-compose -f topologies/$toponode-topo.yml build
-  - docker-compose -f topologies/$toponode-topo.yml up -d 
+  - docker-compose -f topologies/3node-topo.yml build
+  - docker-compose -f topologies/3node-topo.yml up -d 
   # Adjust docker bridge settings
   - scripts/config_docker_machine.sh
 
 script:
     - docker exec -d test_client /bin/bash -c "/root/go/src/github.com/connorwstein/go-is-is/build.sh"
-    - docker exec -d test_client /bin/bash -c "/root/go/src/github.com/connorwstein/go-is-is/scripts/start_all.sh $topo"
-    - docker exec test_client /bin/bash -c "/root/go/src/github.com/connorwstein/go-is-is/run_tests.sh $topo" 
+    - docker exec -d test_client /bin/bash -c "/root/go/src/github.com/connorwstein/go-is-is/scripts/start_all.sh 3"
+    - docker exec test_client /bin/bash -c "/root/go/src/github.com/connorwstein/go-is-is/run_tests.sh 3" 
