@@ -8,4 +8,6 @@ fi
 for (( i=1; i<= $1; i++ )); do 
     export node$i=$(docker inspect node$i | sed -n 's/\s*"IPAddress": "\(.*\)",/\1/p'  | tail -1)
 done
+# go test -v -run TestAdjBringUp -args -num_nodes=$1 
 go test -v -args -num_nodes=$1 
+# go test -v -run TestSystemID -args -num_nodes=$1 

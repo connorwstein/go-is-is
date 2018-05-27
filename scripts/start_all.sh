@@ -1,6 +1,5 @@
 #!/bin/bash
 # Wipe existing
-echo $#
 if [[ $# != 1 ]]; then
 	echo "Specify the number of nodes in the topology"
 	exit 1
