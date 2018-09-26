@@ -7,8 +7,8 @@ package main
 import (
 	"fmt"
 	"github.com/golang/glog"
+	"github.com/vishvananda/netlink"
 	"sync"
-    "github.com/vishvananda/netlink"
 )
 
 var TopoDB *IsisDB
@@ -205,34 +205,34 @@ func computeSPF(updateDB *IsisDB, topoDB *IsisDB, localSystemID string, localInt
 	printPaths("path", paths)
 	for _, path := range paths {
 		topoDB.Root = AvlInsert(topoDB.Root, systemIDToKey(path.systemID), path, true)
-        // Install into rib if not our own path
-        if path.systemID != cfg.sid {
-            installRouteFromPath(path)
-        }
+		// Install into rib if not our own path
+		if path.systemID != cfg.sid {
+			installRouteFromPath(path)
+		}
 	}
 	AvlPrint(topoDB.Root)
 	updateDB.DBLock.Unlock()
 }
 
-func installRouteFromPath(path *Triple){
-    // Given a shortest path to a node with its appropriate next hop, install the route
-    // route add -net <network which the target router has an ip on> gw <ip of next hop>
-    // We know the next hop required to get to each node in terms of its system id
-    // and the adjacency which that is reachable over. For the route we need the ip address 
-    // of the next hop (determine this from the adjacency neighborIP) and the prefixes available on that
-    // remote node (get this from TLV 128 of that remote node)
-    prefixes := getDirectlyConnectedPrefixes(path.systemID)
-    if path.adj == nil || path.adj.neighborIP == nil {
-        glog.Errorf("Error adding route no next hop")
-        return 
-    }
-    nh := path.adj.neighborIP
-    glog.V(2).Infof("Adding prefixes %v to RIB", prefixes)
-    for _, prefix := range prefixes {
-        route := netlink.Route{Dst:&prefix, Gw:nh}
-        err := netlink.RouteAdd(&route)
-        if err != nil {
-            glog.Errorf("Error adding route %v", err)
-        }
-    }
+func installRouteFromPath(path *Triple) {
+	// Given a shortest path to a node with its appropriate next hop, install the route
+	// route add -net <network which the target router has an ip on> gw <ip of next hop>
+	// We know the next hop required to get to each node in terms of its system id
+	// and the adjacency which that is reachable over. For the route we need the ip address
+	// of the next hop (determine this from the adjacency neighborIP) and the prefixes available on that
+	// remote node (get this from TLV 128 of that remote node)
+	prefixes := getDirectlyConnectedPrefixes(path.systemID)
+	if path.adj == nil || path.adj.neighborIP == nil {
+		glog.Errorf("Error adding route no next hop")
+		return
+	}
+	nh := path.adj.neighborIP
+	glog.V(2).Infof("Adding prefixes %v to RIB", prefixes)
+	for _, prefix := range prefixes {
+		route := netlink.Route{Dst: &prefix, Gw: nh}
+		err := netlink.RouteAdd(&route)
+		if err != nil {
+			glog.Errorf("Error adding route %v", err)
+		}
+	}
 }

@@ -6,10 +6,10 @@ package main
 
 import (
 	"bytes"
-    "net"
 	"encoding/binary"
 	"encoding/hex"
 	"github.com/golang/glog"
+	"net"
 	"time"
 	"unsafe"
 )
@@ -83,13 +83,13 @@ func serializeIsisHelloPDU(pdu *IsisLanHelloPDU) []byte {
 	binary.Write(&buf, binary.BigEndian, pdu.Header)
 	binary.Write(&buf, binary.BigEndian, pdu.LanHelloHeader)
 	tlv := pdu.FirstTLV
-    for tlv != nil {
+	for tlv != nil {
 		// TODO: Will need to keep walking these tlvs until we hit the end somehow
 		glog.V(2).Info("Serializing tlv:", tlv.typeTLV)
 		binary.Write(&buf, binary.BigEndian, tlv.typeTLV)
 		binary.Write(&buf, binary.BigEndian, tlv.lengthTLV)
 		binary.Write(&buf, binary.BigEndian, tlv.valueTLV)
-        tlv = tlv.nextTLV
+		tlv = tlv.nextTLV
 	}
 	return buf.Bytes()
 }
@@ -111,18 +111,18 @@ func deserializeIsisHelloPDU(raw_bytes []byte) *IsisLanHelloPDU {
 	ethernetHeaderSize := 14
 	tlv_offset := ethernetHeaderSize + int(unsafe.Sizeof(commonHeader)) + int(unsafe.Sizeof(helloHeader))
 	glog.Infof("tlv offset %d raw bytes %d", tlv_offset, len(raw_bytes))
-    hello.FirstTLV = parseTLVs(raw_bytes, tlv_offset)
+	hello.FirstTLV = parseTLVs(raw_bytes, tlv_offset)
 	return &hello
 }
 
 func getInterfaceTLV(intf *Intf) *IsisTLV {
-    var interfaceTLV IsisTLV
-    interfaceTLV.typeTLV = ISIS_IP_INTF_ADDR_TLV 
-    interfaceTLV.lengthTLV = 4
-    interfaceTLV.valueTLV = make([]byte, 4)
-    copy(interfaceTLV.valueTLV, intf.prefix.To4())
-    glog.V(2).Infof("Interface TLV 132 %v", interfaceTLV)
-    return &interfaceTLV 
+	var interfaceTLV IsisTLV
+	interfaceTLV.typeTLV = ISIS_IP_INTF_ADDR_TLV
+	interfaceTLV.lengthTLV = 4
+	interfaceTLV.valueTLV = make([]byte, 4)
+	copy(interfaceTLV.valueTLV, intf.prefix.To4())
+	glog.V(2).Infof("Interface TLV 132 %v", interfaceTLV)
+	return &interfaceTLV
 }
 
 func sendHello(intf *Intf, sid string, neighborsTLV *IsisTLV, sendChan chan []byte) {
@@ -131,9 +131,9 @@ func sendHello(intf *Intf, sid string, neighborsTLV *IsisTLV, sendChan chan []by
 	hello_l1_lan := buildL1HelloPDU(systemIDToBytes(sid))
 	if neighborsTLV != nil {
 		hello_l1_lan.FirstTLV = neighborsTLV
-        hello_l1_lan.FirstTLV.nextTLV = getInterfaceTLV(intf)
-        // Need to also add TLV 132 which has the outgoing ip address
-        glog.V(2).Infof("Sending hello with tlvs %v %v", hello_l1_lan.FirstTLV, hello_l1_lan.FirstTLV.nextTLV)
+		hello_l1_lan.FirstTLV.nextTLV = getInterfaceTLV(intf)
+		// Need to also add TLV 132 which has the outgoing ip address
+		glog.V(2).Infof("Sending hello with tlvs %v %v", hello_l1_lan.FirstTLV, hello_l1_lan.FirstTLV.nextTLV)
 	}
 	sendChan <- buildEthernetFrame(l1_multicast,
 		getMac(intf.name),
@@ -239,9 +239,9 @@ func isisHelloRecv(intf *Intf, helloChan chan []byte, sendChan chan []byte) {
 				intf.adj.state = "UP"
 				intf.adj.metric = 10
 				intf.adj.neighborSystemID = make([]byte, 6)
-                intf.adj.neighborIP = make(net.IP, 4)
+				intf.adj.neighborIP = make(net.IP, 4)
 				copy(intf.adj.neighborSystemID, rsp.lanHelloPDU.LanHelloHeader.SourceSystemID[:])
-                copy(intf.adj.neighborIP, net.IP(rsp.lanHelloPDU.FirstTLV.nextTLV.valueTLV))
+				copy(intf.adj.neighborIP, net.IP(rsp.lanHelloPDU.FirstTLV.nextTLV.valueTLV))
 				glog.Infof("Adjacency up between %v and %v on intf %v, neighbor IP %v", cfg.sid, systemIDToString(intf.adj.neighborSystemID), intf.name, intf.adj.neighborIP)
 				// Signal that an adjacency change has occurred, so we should regenerate our lsp
 				// and flood

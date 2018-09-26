@@ -9,8 +9,8 @@
 package main
 
 import (
+	"flag"
 	"fmt"
-    "flag"
 	pb "github.com/connorwstein/go-is-is/config"
 	"github.com/golang/glog"
 	"golang.org/x/net/context"
@@ -21,7 +21,6 @@ import (
 	"time"
 )
 
-
 var numNodes = flag.Int("num_nodes", 3, "Number of nodes in the topology")
 var serverConnections map[string]*grpc.ClientConn = make(map[string]*grpc.ClientConn)
 
@@ -31,16 +30,16 @@ func CreateClients(host string, port string) (pb.StateClient, pb.ConfigureClient
 	if err != nil {
 		glog.Errorf("Failed to connect to gRPC server: %v", err)
 	}
-    serverConnections[host] = conn
-    state := pb.NewStateClient(conn)
-    config := pb.NewConfigureClient(conn) 
-    return state, config
+	serverConnections[host] = conn
+	state := pb.NewStateClient(conn)
+	config := pb.NewConfigureClient(conn)
+	return state, config
 }
 
 func CloseConnections() {
-    for _, v := range serverConnections {
-        v.Close()
-    }
+	for _, v := range serverConnections {
+		v.Close()
+	}
 }
 
 func Get(host string, port string, req string) interface{} {
@@ -78,102 +77,100 @@ func Get(host string, port string, req string) interface{} {
 }
 
 var systemIDtests = []struct {
-    in string
-    out string
-}{{"1111.1111.1111","SID 1111.1111.1111 successfully configured"}, 
-  {"1111.1111.1112","SID 1111.1111.1112 successfully configured"},
-  {"1111.1111.1113","SID 1111.1111.1113 successfully configured"},
-  {"1111.1111.1114","SID 1111.1111.1114 successfully configured"},
-  {"1111.1111.1115","SID 1111.1111.1115 successfully configured"},
-  {"1111.1111.1116","SID 1111.1111.1116 successfully configured"},
-  {"1111.1111.1117","SID 1111.1111.1117 successfully configured"},
-  {"1111.1111.1118","SID 1111.1111.1118 successfully configured"}}
-
+	in  string
+	out string
+}{{"1111.1111.1111", "SID 1111.1111.1111 successfully configured"},
+	{"1111.1111.1112", "SID 1111.1111.1112 successfully configured"},
+	{"1111.1111.1113", "SID 1111.1111.1113 successfully configured"},
+	{"1111.1111.1114", "SID 1111.1111.1114 successfully configured"},
+	{"1111.1111.1115", "SID 1111.1111.1115 successfully configured"},
+	{"1111.1111.1116", "SID 1111.1111.1116 successfully configured"},
+	{"1111.1111.1117", "SID 1111.1111.1117 successfully configured"},
+	{"1111.1111.1118", "SID 1111.1111.1118 successfully configured"}}
 
 func TestSystemIDConfig(t *testing.T) {
-    for i := 1; i <= *numNodes; i++ {
-        ip := os.Getenv(fmt.Sprintf("node%d", i))
-        _, config := CreateClients(ip, GRPC_CFG_SERVER_PORT)
-        rsp, err := config.ConfigureSystemID(context.Background(), &pb.SystemIDCfgRequest{Sid: systemIDtests[i].in})
-        if err != nil {
-            t.Logf("Unable to configure SID: %v", err)
-            t.Fail()
-        }
-        if rsp.Ack != systemIDtests[i].out {
-            t.Fail()
-        }
-    }
-    CloseConnections() 
+	for i := 1; i <= *numNodes; i++ {
+		ip := os.Getenv(fmt.Sprintf("node%d", i))
+		_, config := CreateClients(ip, GRPC_CFG_SERVER_PORT)
+		rsp, err := config.ConfigureSystemID(context.Background(), &pb.SystemIDCfgRequest{Sid: systemIDtests[i].in})
+		if err != nil {
+			t.Logf("Unable to configure SID: %v", err)
+			t.Fail()
+		}
+		if rsp.Ack != systemIDtests[i].out {
+			t.Fail()
+		}
+	}
+	CloseConnections()
 }
 
 func processAdjacencies(intfs *pb.IntfReply) (int, int) {
-    numAdjUp, numAdj := 0, 0
-    // We don't actually know how many adjacencies each node has apriori, need 
-    // to store this 
-    for _, intf := range intfs.Intf {
-        if strings.Contains(intf, "UP") {
-            numAdjUp += 1
-        }
-        numAdj += 1 
-    }
-    return numAdjUp, numAdj
+	numAdjUp, numAdj := 0, 0
+	// We don't actually know how many adjacencies each node has apriori, need
+	// to store this
+	for _, intf := range intfs.Intf {
+		if strings.Contains(intf, "UP") {
+			numAdjUp += 1
+		}
+		numAdj += 1
+	}
+	return numAdjUp, numAdj
 }
 
 func checkAdjacenciesReady(t *testing.T) bool {
 	adjCount := make(map[string]int)
 	desiredAdjCount := make(map[string]int)
-    for i := 1; i <= *numNodes; i++ {
-        ip := os.Getenv(fmt.Sprintf("node%d", i))
-        state, _ := CreateClients(ip, GRPC_CFG_SERVER_PORT)
-        intfs, err := state.GetIntf(context.Background(), &pb.IntfRequest{ShIntf: ""})
-        if err != nil {
-            t.Logf("Error querying interface state %v", err)
-            t.Fail()
-        }
-        // We don't actually know how many adjacencies each node has apriori, need 
-        // to store this 
-        adjCount[ip], desiredAdjCount[ip] = processAdjacencies(intfs)
-    }
-    t.Log("Adjacenecy Count:")
-    for k, v := range adjCount {
-        t.Log(k, v)
-    } 
-    t.Log("Desired Adjacency Count:")
-    for k, v := range desiredAdjCount{
-        t.Log(k, v)
-    } 
-    allValid := true 
-    for i := 1; i <= *numNodes; i++ {
-        ip := os.Getenv(fmt.Sprintf("node%d", i))
-        if adjCount[ip] != desiredAdjCount[ip] {
-            allValid = false
-        }
-    }
-    return allValid
+	for i := 1; i <= *numNodes; i++ {
+		ip := os.Getenv(fmt.Sprintf("node%d", i))
+		state, _ := CreateClients(ip, GRPC_CFG_SERVER_PORT)
+		intfs, err := state.GetIntf(context.Background(), &pb.IntfRequest{ShIntf: ""})
+		if err != nil {
+			t.Logf("Error querying interface state %v", err)
+			t.Fail()
+		}
+		// We don't actually know how many adjacencies each node has apriori, need
+		// to store this
+		adjCount[ip], desiredAdjCount[ip] = processAdjacencies(intfs)
+	}
+	t.Log("Adjacenecy Count:")
+	for k, v := range adjCount {
+		t.Log(k, v)
+	}
+	t.Log("Desired Adjacency Count:")
+	for k, v := range desiredAdjCount {
+		t.Log(k, v)
+	}
+	allValid := true
+	for i := 1; i <= *numNodes; i++ {
+		ip := os.Getenv(fmt.Sprintf("node%d", i))
+		if adjCount[ip] != desiredAdjCount[ip] {
+			allValid = false
+		}
+	}
+	return allValid
 }
 
 func TestAdjBringUp(t *testing.T) {
 	// Poll for adjacency establishment
-    // Can't really use a table test here as 
-    // we get the adjacency information on the fly
-    timeout := time.After(10*time.Second)
-    ticker := time.Tick(500*time.Millisecond) 
-    for {
-        select {
-        case <- timeout:
-            t.Log("Adjacencies did not come up in time")
-            t.Fail()
-        case <-ticker:
-            t.Log("Check adjacencies")
-            if checkAdjacenciesReady(t) {
-                CloseConnections() 
-                return  
-            }
-        }
-    }
-    CloseConnections() 
+	// Can't really use a table test here as
+	// we get the adjacency information on the fly
+	timeout := time.After(10 * time.Second)
+	ticker := time.Tick(500 * time.Millisecond)
+	for {
+		select {
+		case <-timeout:
+			t.Log("Adjacencies did not come up in time")
+			t.Fail()
+		case <-ticker:
+			t.Log("Check adjacencies")
+			if checkAdjacenciesReady(t) {
+				CloseConnections()
+				return
+			}
+		}
+	}
+	CloseConnections()
 }
-
 
 // func TestLspFlooding(t *testing.T) {
 // 	nodeIpAddresses := []string{os.Getenv("node1"), os.Getenv("node2"), os.Getenv("node3")}
@@ -209,7 +206,7 @@ func TestAdjBringUp(t *testing.T) {
 // 		}
 // 	}
 // }
-// 
+//
 // func TestTopo(t *testing.T) {
 // 	//     setDebugs("3")
 // 	nodeIpAddresses := []string{os.Getenv("node1"), os.Getenv("node2"), os.Getenv("node3")}

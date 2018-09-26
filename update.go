@@ -212,7 +212,7 @@ func deserializeLsp(raw_bytes []byte) *IsisLsp {
 	// keep reading until remaining tlv data is 0, building up a linked list of the TLVs as we go
 	remainingTLVBytes := len(raw_bytes) - tlv_offset
 	glog.V(2).Infof("Received %d raw bytes not including ethernet header. TLV bytes %d. TLV offset %d", len(raw_bytes), remainingTLVBytes, tlv_offset)
-    coreLsp.FirstTLV = parseTLVs(raw_bytes, tlv_offset)
+	coreLsp.FirstTLV = parseTLVs(raw_bytes, tlv_offset)
 	var lsp IsisLsp = IsisLsp{Key: lspIDToKey(lspHeader.LspID), LspID: lspHeader.LspID, CoreLsp: coreLsp}
 	return &lsp
 }
@@ -306,7 +306,7 @@ func getIPReachTLV(interfaces []*Intf) *IsisTLV {
 				ipReachTLV.valueTLV = append(ipReachTLV.valueTLV, route.Mask[:]...)
 				metric := [4]byte{0x00, 0x00, 0x00, 0x0a}
 				ipReachTLV.valueTLV = append(ipReachTLV.valueTLV, metric[:]...) // Using metric of 10 always (1 hop)
-                glog.V(2).Infof("Adding route %v", route)
+				glog.V(2).Infof("Adding route %v", route)
 				ipReachTLV.lengthTLV += 12
 			}
 		}
@@ -341,30 +341,30 @@ func getNeighborTLV(interfaces []*Intf) *IsisTLV {
 }
 
 func getPrefixesFromTLV(tlv *IsisTLV) []net.IPNet {
-    // Given a prefix tlv, return the prefixes as a slice of strings
-    prefixes := make([]net.IPNet, 0)
-    prefixCount := int(tlv.lengthTLV) / 12 // Each prefix takes up 12 bytes
+	// Given a prefix tlv, return the prefixes as a slice of strings
+	prefixes := make([]net.IPNet, 0)
+	prefixCount := int(tlv.lengthTLV) / 12 // Each prefix takes up 12 bytes
 	glog.V(2).Infof("Prefix count %d in tlv %v", prefixCount, tlv)
 	currentPrefix := 0
 	for currentPrefix < prefixCount {
-        // Skip the metrix
-        var currentPrefixValue net.IPNet
-        currentPrefixValue.IP =  tlv.valueTLV[currentPrefix*12:currentPrefix*12+4] // Metric is first, skip that
-        currentPrefixValue.Mask = tlv.valueTLV[currentPrefix*12 + 4:currentPrefix*12 + 4 + 4]
-        glog.V(2).Infof("Current prefix %v", currentPrefixValue)
-        prefixes = append(prefixes, currentPrefixValue)
-        currentPrefix += 1
-    }
-    return prefixes 
+		// Skip the metrix
+		var currentPrefixValue net.IPNet
+		currentPrefixValue.IP = tlv.valueTLV[currentPrefix*12 : currentPrefix*12+4] // Metric is first, skip that
+		currentPrefixValue.Mask = tlv.valueTLV[currentPrefix*12+4 : currentPrefix*12+4+4]
+		glog.V(2).Infof("Current prefix %v", currentPrefixValue)
+		prefixes = append(prefixes, currentPrefixValue)
+		currentPrefix += 1
+	}
+	return prefixes
 }
 
-func getDirectlyConnectedPrefixes(systemID string) []net.IPNet{
-    // Lookup the lsp and extract the directly connected prefixes
+func getDirectlyConnectedPrefixes(systemID string) []net.IPNet {
+	// Lookup the lsp and extract the directly connected prefixes
 	tmp := AvlSearch(UpdateDB.Root, systemIDToKey(systemID))
 	if tmp == nil {
 		glog.V(1).Infof("No such LSP %s in LSP database", systemID)
-        return nil
-	} 
+		return nil
+	}
 	lsp := tmp.(*IsisLsp)
 	currentTLV := lsp.CoreLsp.FirstTLV
 	for currentTLV != nil {

@@ -1,9 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"encoding/binary"
 	"github.com/golang/glog"
-    "bytes"
 	"net"
 	"testing"
 )
@@ -51,17 +51,16 @@ func TestReachTLV(t *testing.T) {
 }
 
 func TestNeighborTLV(t *testing.T) {
-    numInterfaces := 2
+	numInterfaces := 2
 	interfaces := make([]*Intf, numInterfaces)
-    systemID := []byte{0x01, 0x01, 0x01, 0x01, 0x01, 0x01}
-    // Need a couple adjacencies with neighbor system IDs
+	systemID := []byte{0x01, 0x01, 0x01, 0x01, 0x01, 0x01}
+	// Need a couple adjacencies with neighbor system IDs
 	for i := 0; i < numInterfaces; i++ {
 		interfaces[i] = &Intf{adj: &Adjacency{state: "UP", neighborSystemID: systemID}}
-    }
-    tlv := getNeighborTLV(interfaces)
-    t.Logf("Neighbors TLV %v", tlv)
-    if ! (bytes.Equal(tlv.valueTLV[5:5 + 6], systemID) && bytes.Equal(tlv.valueTLV[12+4:12+4+6], systemID)) {
-        t.Fail()
-    }
+	}
+	tlv := getNeighborTLV(interfaces)
+	t.Logf("Neighbors TLV %v", tlv)
+	if !(bytes.Equal(tlv.valueTLV[5:5+6], systemID) && bytes.Equal(tlv.valueTLV[12+4:12+4+6], systemID)) {
+		t.Fail()
+	}
 }
-
